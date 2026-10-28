@@ -9,6 +9,7 @@ import '../../../models/sensor_connection.dart';
 import '../../../models/test_result.dart';
 import '../../../services/app_services.dart';
 import '../../shell/app_shell.dart';
+import '../../widgets/coming_soon.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/protocol_icon.dart';
 import '../../widgets/safit_button.dart';
@@ -18,11 +19,25 @@ import '../../widgets/safit_logo.dart';
 import '../../widgets/safit_page.dart';
 import '../../widgets/section_header.dart';
 import '../../widgets/status_tile.dart';
+import '../settings/settings_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
   static const _recentCount = 2;
+
+  late Future<List<TestResult>> _results;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _results = AppServices.of(context).results.listResults();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -34,7 +49,13 @@ class HomeScreen extends StatelessWidget {
       header: const SafitHeader(titleWidget: SafitLogo()),
       children: [
         const SizedBox(height: AppSpacing.md),
-        Text('Bonjour 👋', style: textTheme.headlineMedium),
+        ValueListenableBuilder(
+          valueListenable: services.profile.profile,
+          builder: (_, profile, _) => Text(
+            profile == null ? 'Bonjour 👋' : 'Bonjour ${profile.firstName} 👋',
+            style: textTheme.headlineMedium,
+          ),
+        ),
         const SizedBox(height: AppSpacing.xs),
         Text(
           'Prêt pour un nouveau test ?',
@@ -70,7 +91,7 @@ class HomeScreen extends StatelessWidget {
           onAction: () => shell.goTo(AppTab.results),
         ),
         FutureBuilder(
-          future: services.results.listResults(),
+          future: _results,
           builder: (context, snapshot) {
             final results = snapshot.data;
             if (results == null) return const SizedBox.shrink();
@@ -115,6 +136,8 @@ class _HeartRateTile extends StatelessWidget {
       label: 'Polar H10',
       status: status,
       level: level,
+      // Ouvrira l'écran Polar dédié quand il existera.
+      onTap: () => SettingsScreen.open(context),
     );
   }
 }
@@ -137,6 +160,8 @@ class _CameraTile extends StatelessWidget {
       label: 'Caméra',
       status: status,
       level: level,
+      // Ouvrira l'écran caméra dédié quand il existera.
+      onTap: () => SettingsScreen.open(context),
     );
   }
 }
@@ -160,6 +185,8 @@ class _RecentTestTile extends StatelessWidget {
       title: result.protocol.title,
       subtitle: formatDateTime(result.date),
       footer: Text(metrics.join(' · ')),
+      // Ouvrira le détail de la séance quand l'écran existera.
+      onTap: () => showComingSoon(context),
     );
   }
 }

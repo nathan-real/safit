@@ -44,8 +44,33 @@ void main() {
     await tester.pumpWidget(SafitApp(services: services));
     await tester.pumpAndSettle();
 
+    expect(find.text('Bonjour Léa 👋'), findsOneWidget);
     expect(find.text('Connectée · 72 bpm'), findsOneWidget);
     expect(find.text('Prête · 240 fps'), findsOneWidget);
     expect(find.text('Test incrémental'), findsOneWidget);
+  });
+
+  testWidgets('Les cartes capteurs ouvrent les réglages', (tester) async {
+    await tester.pumpWidget(SafitApp(services: services));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Polar H10'));
+    await tester.pumpAndSettle();
+    expect(find.text('Mode expert'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Retour'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Caméra'));
+    await tester.pumpAndSettle();
+    expect(find.text('Mode expert'), findsOneWidget);
+  });
+
+  testWidgets('Un test récent annonce l\'écran de détail à venir', (tester) async {
+    await tester.pumpWidget(SafitApp(services: services));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Test incrémental'));
+    await tester.pump();
+    expect(find.text('Bientôt disponible'), findsOneWidget);
   });
 }

@@ -4,7 +4,9 @@ import 'ble/heart_rate_service.dart';
 import 'ble/mock_heart_rate_service.dart';
 import 'camera/camera_service.dart';
 import 'camera/mock_camera_service.dart';
+import 'storage/mock_profile_service.dart';
 import 'storage/mock_results_service.dart';
+import 'storage/profile_service.dart';
 import 'storage/results_service.dart';
 import 'test/mock_test_service.dart';
 import 'test/test_data_service.dart';
@@ -17,6 +19,7 @@ class ServiceRegistry {
     required this.camera,
     required this.testData,
     required this.results,
+    required this.profile,
   });
 
   /// Tout simulé. [live] à faux coupe les minuteries (tests automatisés).
@@ -26,6 +29,7 @@ class ServiceRegistry {
       camera: MockCameraService(),
       testData: MockTestService(),
       results: MockResultsService(),
+      profile: MockProfileService(),
     );
   }
 
@@ -33,11 +37,13 @@ class ServiceRegistry {
   final CameraService camera;
   final TestDataService testData;
   final ResultsService results;
+  final ProfileService profile;
 
   void dispose() {
     heartRate.dispose();
     camera.dispose();
     testData.dispose();
+    profile.dispose();
   }
 }
 
