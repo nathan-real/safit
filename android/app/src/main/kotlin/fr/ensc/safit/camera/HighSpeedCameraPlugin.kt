@@ -16,9 +16,11 @@ import kotlin.math.roundToInt
 /**
  * Pont avec Flutter.
  *
- * - `safit/highspeed` (méthodes) : start, stop, setRoi, setExposureLocked, outputDirectory.
+ * - `safit/highspeed` (méthodes) : start, stop, setRoi, setExposureLocked,
+ *   setPreviewEnabled, setAnalysisEnabled, outputDirectory.
  * - `safit/highspeed/samples` (flux) : toutes les ~50 ms, un lot
- *   `{t: horodatages ns, y: luminosités 0..1, sensorFrames: images sorties du capteur}`.
+ *   `{t: horodatages ns, y: luminosités 0..1 (-1 si analyse coupée),
+ *   sensorFrames: images sorties du capteur, workUs: temps moyen de traitement d'une image}`.
  */
 class HighSpeedCameraPlugin(private val activity: Activity, engine: FlutterEngine) :
     MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
@@ -72,6 +74,14 @@ class HighSpeedCameraPlugin(private val activity: Activity, engine: FlutterEngin
             }
             "setExposureLocked" -> {
                 camera?.setExposureLocked(call.arguments<Boolean>() == true)
+                result.success(null)
+            }
+            "setPreviewEnabled" -> {
+                analyzer?.previewEnabled = call.arguments<Boolean>() == true
+                result.success(null)
+            }
+            "setAnalysisEnabled" -> {
+                analyzer?.analysisEnabled = call.arguments<Boolean>() == true
                 result.success(null)
             }
             "outputDirectory" -> result.success(activity.getExternalFilesDir(null)?.absolutePath)
@@ -153,6 +163,7 @@ class HighSpeedCameraPlugin(private val activity: Activity, engine: FlutterEngin
                                 "cameraId" to config.cameraId,
                                 "sensorOrientation" to config.sensorOrientation,
                                 "highSpeedOptions" to config.highSpeedOptions,
+                                "asyncReadback" to an.asyncReadback,
                             ),
                         )
                     }
@@ -195,7 +206,12 @@ class HighSpeedCameraPlugin(private val activity: Activity, engine: FlutterEngin
         }
         if (t.isEmpty()) return
         sink?.success(
-            mapOf("t" to t, "y" to y, "sensorFrames" to (camera?.sensorFrames?.get() ?: 0L)),
+            mapOf(
+                "t" to t,
+                "y" to y,
+                "sensorFrames" to (camera?.sensorFrames?.get() ?: 0L),
+                "workUs" to (analyzer?.takeAverageWorkUs() ?: -1),
+            ),
         )
     }
 

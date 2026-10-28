@@ -6,14 +6,34 @@ import '../../../core/theme/app_colors.dart';
 /// Rectangle de la zone de détection, posé sur l'aperçu caméra.
 /// On le déplace en le faisant glisser, on le redimensionne par la poignée
 /// en bas à droite. [roi] est en coordonnées 0..1 de l'aperçu.
-class RoiOverlay extends StatelessWidget {
+class RoiOverlay extends StatefulWidget {
   const RoiOverlay({super.key, required this.roi, required this.onChanged});
 
   final Rect roi;
   final ValueChanged<Rect> onChanged;
 
+  @override
+  State<RoiOverlay> createState() => _RoiOverlayState();
+}
+
+class _RoiOverlayState extends State<RoiOverlay> {
   static const _minSize = 0.05;
   static const _handle = 36.0;
+
+  /// Position courante, mise à jour à chaque mouvement du doigt : plusieurs
+  /// mouvements peuvent arriver avant que l'écran ne se redessine.
+  late Rect _roi = widget.roi;
+
+  @override
+  void didUpdateWidget(RoiOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _roi = widget.roi;
+  }
+
+  void _update(Rect value) {
+    _roi = value;
+    widget.onChanged(value);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,18 +41,18 @@ class RoiOverlay extends StatelessWidget {
       builder: (context, constraints) {
         final w = constraints.maxWidth;
         final h = constraints.maxHeight;
-        final rect = Rect.fromLTWH(roi.left * w, roi.top * h, roi.width * w, roi.height * h);
+        final rect = Rect.fromLTWH(_roi.left * w, _roi.top * h, _roi.width * w, _roi.height * h);
 
         void move(Offset delta) {
-          final left = (roi.left + delta.dx / w).clamp(0.0, 1 - roi.width);
-          final top = (roi.top + delta.dy / h).clamp(0.0, 1 - roi.height);
-          onChanged(Rect.fromLTWH(left, top, roi.width, roi.height));
+          final left = (_roi.left + delta.dx / w).clamp(0.0, 1 - _roi.width);
+          final top = (_roi.top + delta.dy / h).clamp(0.0, 1 - _roi.height);
+          _update(Rect.fromLTWH(left, top, _roi.width, _roi.height));
         }
 
         void resize(Offset delta) {
-          final width = (roi.width + delta.dx / w).clamp(_minSize, 1 - roi.left);
-          final height = (roi.height + delta.dy / h).clamp(_minSize, 1 - roi.top);
-          onChanged(Rect.fromLTWH(roi.left, roi.top, width, height));
+          final width = (_roi.width + delta.dx / w).clamp(_minSize, 1 - _roi.left);
+          final height = (_roi.height + delta.dy / h).clamp(_minSize, 1 - _roi.top);
+          _update(Rect.fromLTWH(_roi.left, _roi.top, width, height));
         }
 
         return Stack(

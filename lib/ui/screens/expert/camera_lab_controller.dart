@@ -27,6 +27,14 @@ class CameraLabController extends ChangeNotifier {
   bool exposureLocked = false;
   int markersPerTurn = 8;
 
+  /// Interrupteurs de diagnostic : couper l'un puis l'autre montre
+  /// ce qui empêche d'atteindre la fréquence demandée.
+  bool previewEnabled = true;
+  bool analysisEnabled = true;
+
+  /// Temps moyen de traitement d'une image côté natif (ms).
+  double? workMs;
+
   FrameStats stats = FrameStats(nominalFps: 240);
   final detector = MarkDetector();
   double sensorFps = 0;
@@ -66,6 +74,8 @@ class CameraLabController extends ChangeNotifier {
       chart.clear();
       _sensorHistory.clear();
       if (exposureLocked) await _camera.setExposureLocked(true);
+      if (!previewEnabled) await _camera.setPreviewEnabled(false);
+      if (!analysisEnabled) await _camera.setAnalysisEnabled(false);
     } on PlatformException catch (e) {
       error = e.message ?? e.code;
       await _subscription?.cancel();
@@ -97,6 +107,25 @@ class CameraLabController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setPreviewEnabled(bool value) {
+    previewEnabled = value;
+    if (isRunning) _camera.setPreviewEnabled(value);
+    _noteSettingsChange();
+    notifyListeners();
+  }
+
+  void setAnalysisEnabled(bool value) {
+    analysisEnabled = value;
+    if (isRunning) _camera.setAnalysisEnabled(value);
+    _noteSettingsChange();
+    notifyListeners();
+  }
+
+  /// Garde une trace des changements de réglage dans le CSV en cours.
+  void _noteSettingsChange() {
+    _recording?.writeln('# ${lastTimestamp}ns apercu=$previewEnabled analyse=$analysisEnabled');
+  }
+
   void setMarkersPerTurn(int value) {
     markersPerTurn = value.clamp(1, 64);
     notifyListeners();
@@ -114,6 +143,8 @@ class CameraLabController extends ChangeNotifier {
       ..writeln('# roi=${r.left.toStringAsFixed(3)},${r.top.toStringAsFixed(3)},'
           '${r.width.toStringAsFixed(3)},${r.height.toStringAsFixed(3)} '
           'marqueurs_par_tour=$markersPerTurn exposition_bloquee=$exposureLocked')
+      ..writeln('# apercu=$previewEnabled analyse=$analysisEnabled '
+          'lecture_sans_attente=${s.asyncReadback}')
       ..writeln('timestamp_ns,luminosite,trait');
     recordedSamples = 0;
     notifyListeners();
@@ -146,15 +177,21 @@ class CameraLabController extends ChangeNotifier {
       final t = batch.timestampsNs[i];
       final y = batch.luma[i];
       stats.add(t);
+      if (y < 0) {
+        // Analyse coupée : seule l'heure de l'image compte.
+        recording?.writeln('$t,,');
+        continue;
+      }
       final mark = detector.add(t, y);
       chart.add((t, y));
       recording?.writeln('$t,${y.toStringAsFixed(4)},${mark ? 1 : 0}');
     }
     if (recording != null) recordedSamples += batch.timestampsNs.length;
-    while (chart.isNotEmpty && lastTimestamp - chart.first.$1 > chartWindowNs) {
+    while (chart.isNotEmpty && chart.last.$1 - chart.first.$1 > chartWindowNs) {
       chart.removeFirst();
     }
-    if (batch.luma.isNotEmpty) lastLuma = batch.luma.last;
+    if (batch.luma.isNotEmpty && batch.luma.last >= 0) lastLuma = batch.luma.last;
+    if (batch.workUs >= 0) workMs = batch.workUs / 1000;
     _updateSensorFps(batch.sensorFrames);
     notifyListeners();
   }

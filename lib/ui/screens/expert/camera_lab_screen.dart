@@ -110,6 +110,9 @@ class _CameraLabScreenState extends State<CameraLabScreen> {
     final textTheme = Theme.of(context).textTheme;
     final stats = _lab.stats;
     final fpsOk = stats.fps >= session.fps * 0.95;
+    // Budget de temps par image pour tenir la fréquence demandée (4,2 ms à 240 fps).
+    final budgetMs = 1000 / session.fps;
+    final workMs = _lab.workMs;
 
     return [
       Text(
@@ -119,6 +122,12 @@ class _CameraLabScreenState extends State<CameraLabScreen> {
         style: textTheme.bodySmall?.copyWith(
           color: session.highSpeed ? AppColors.accent : AppColors.warning,
         ),
+      ),
+      Text(
+        session.asyncReadback
+            ? 'Lecture du calcul sans attente (OpenGL ES 3)'
+            : 'Lecture du calcul avec attente (OpenGL ES 2)',
+        style: textTheme.bodySmall,
       ),
       const SizedBox(height: AppSpacing.md),
       Center(
@@ -151,9 +160,44 @@ class _CameraLabScreenState extends State<CameraLabScreen> {
         ('Images capteur /s', _lab.sensorFps.toStringAsFixed(0), null),
         ('Images perdues', '${stats.droppedFrames}', stats.droppedFrames == 0 ? null : AppColors.warning),
         ('Plus grand trou', '${stats.maxGapMs.toStringAsFixed(1)} ms', null),
+        (
+          'Calcul / image',
+          workMs == null ? '--' : '${workMs.toStringAsFixed(2)} ms',
+          workMs == null ? null : (workMs < budgetMs ? AppColors.accent : AppColors.warning),
+        ),
+        ('Budget / image', '${budgetMs.toStringAsFixed(2)} ms', null),
         ('Traits détectés', '${_lab.detector.marks.length}', null),
         ('Volant', '${_lab.wheelRpm.toStringAsFixed(0)} tr/min', null),
       ]),
+      const SectionHeader(title: 'Diagnostic'),
+      Text(
+        'Coupez l\'un puis l\'autre et notez « Images analysées /s » à chaque fois.',
+        style: textTheme.bodySmall,
+      ),
+      const SizedBox(height: AppSpacing.sm),
+      SafitCard(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+        child: Column(
+          children: [
+            SwitchListTile(
+              title: const Text('Aperçu'),
+              subtitle: Text('Affichage de l\'image à l\'écran', style: textTheme.bodySmall),
+              value: _lab.previewEnabled,
+              onChanged: _lab.setPreviewEnabled,
+            ),
+            const Divider(indent: AppSpacing.lg, endIndent: AppSpacing.lg),
+            SwitchListTile(
+              title: const Text('Analyse'),
+              subtitle: Text(
+                'Mesure de la luminosité (coupée : on ne garde que l\'heure des images)',
+                style: textTheme.bodySmall,
+              ),
+              value: _lab.analysisEnabled,
+              onChanged: _lab.setAnalysisEnabled,
+            ),
+          ],
+        ),
+      ),
       const SectionHeader(title: 'Luminosité (2 dernières secondes)'),
       SafitCard(
         child: LumaChart(

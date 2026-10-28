@@ -5,9 +5,11 @@ import android.opengl.EGL14
 import android.opengl.EGLConfig
 import android.opengl.EGLContext
 import android.opengl.EGLDisplay
+import android.opengl.EGLExt
 import android.opengl.EGLSurface
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
+import android.opengl.GLES30
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Process
@@ -23,10 +25,13 @@ import java.util.concurrent.CountDownLatch
  * moyenne. Résultat : un seul nombre (la luminosité) par image, avec son
  * horodatage capteur.
  *
- * Dessine aussi un aperçu, à fréquence réduite, dans la surface affichée par Flutter.
- * Les coordonnées de la ROI sont celles de l'aperçu (portrait, 0..1, origine en haut
- * à gauche) : analyse et aperçu passent par la même conversion, donc le rectangle
- * dessiné à l'écran est exactement la zone analysée.
+ * Pour ne jamais attendre le GPU, la lecture est décalée d'une image (OpenGL ES 3) :
+ * on lance le calcul de l'image n et on lit le résultat de l'image n-1, déjà prêt.
+ *
+ * Dessine aussi un aperçu, à fréquence réduite et sans attendre l'écran, dans la
+ * surface affichée par Flutter. Les coordonnées de la ROI sont celles de l'aperçu
+ * (portrait, 0..1, origine en haut à gauche) : analyse et aperçu passent par la
+ * même conversion, donc le rectangle dessiné à l'écran est exactement la zone analysée.
  */
 class RoiAnalyzer(
     private val bufferWidth: Int,
@@ -45,10 +50,15 @@ class RoiAnalyzer(
     private var previewWidth = 0
     private var previewHeight = 0
 
+    /** Vrai si le contexte OpenGL ES 3 est disponible (lecture sans attente). */
+    var asyncReadback = false
+        private set
+
     private var oesTexture = 0
     private var program = 0
     private var framebuffer = 0
     private var framebufferTexture = 0
+    private val pixelBuffers = IntArray(2)
     private lateinit var surfaceTexture: SurfaceTexture
 
     /** Surface à donner à la caméra comme sortie. */
@@ -62,7 +72,24 @@ class RoiAnalyzer(
 
     @Volatile
     private var roi = floatArrayOf(0.25f, 0.4f, 0.5f, 0.2f)
+
+    /** Interrupteurs de diagnostic. */
+    @Volatile
+    var previewEnabled = true
+
+    @Volatile
+    var analysisEnabled = true
+
     private var frameIndex = 0L
+
+    /** Image dont le calcul est en cours (lecture décalée), ou -1. */
+    private var pendingTimestamp = -1L
+    private var pendingSlot = 0
+
+    // Temps passé à traiter les images (pour le diagnostic).
+    private val workLock = Any()
+    private var workNs = 0L
+    private var workFrames = 0
 
     fun start() = runSync {
         setUpEgl()
@@ -78,6 +105,14 @@ class RoiAnalyzer(
         roi = floatArrayOf(x, y, w, h)
     }
 
+    /** Temps moyen de traitement d'une image (µs) depuis le dernier appel, ou -1. */
+    fun takeAverageWorkUs(): Int = synchronized(workLock) {
+        val avg = if (workFrames == 0) -1 else (workNs / workFrames / 1000).toInt()
+        workNs = 0
+        workFrames = 0
+        avg
+    }
+
     /** Surface Flutter où dessiner l'aperçu (null pour l'arrêter). */
     fun setPreviewSurface(surface: Surface?, width: Int, height: Int) = runSync {
         if (previewSurface != EGL14.EGL_NO_SURFACE) {
@@ -91,6 +126,10 @@ class RoiAnalyzer(
             )
             previewWidth = width
             previewHeight = height
+            // Ne jamais attendre l'écran au moment d'afficher l'image.
+            EGL14.eglMakeCurrent(display, previewSurface, previewSurface, context)
+            EGL14.eglSwapInterval(display, 0)
+            EGL14.eglMakeCurrent(display, pbuffer, pbuffer, context)
         }
     }
 
@@ -99,6 +138,7 @@ class RoiAnalyzer(
             if (::inputSurface.isInitialized) inputSurface.release()
             if (::surfaceTexture.isInitialized) surfaceTexture.release()
             if (previewSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(display, previewSurface)
+            if (asyncReadback) GLES30.glDeleteBuffers(2, pixelBuffers, 0)
             GLES20.glDeleteProgram(program)
             GLES20.glDeleteFramebuffers(1, intArrayOf(framebuffer), 0)
             GLES20.glDeleteTextures(2, intArrayOf(framebufferTexture, oesTexture), 0)
@@ -113,30 +153,75 @@ class RoiAnalyzer(
     // --- Boucle image par image (thread GL) ---
 
     private fun onFrame() {
+        val start = System.nanoTime()
         surfaceTexture.updateTexImage()
         val timestamp = surfaceTexture.timestamp
         surfaceTexture.getTransformMatrix(texMatrix)
 
-        onSample(timestamp, measureRoiLuma())
+        when {
+            !analysisEnabled -> {
+                pendingTimestamp = -1L
+                onSample(timestamp, NO_LUMA)
+            }
+            asyncReadback -> measureAsync(timestamp)
+            else -> onSample(timestamp, measureSync())
+        }
 
-        if (previewSurface != EGL14.EGL_NO_SURFACE && frameIndex % PREVIEW_EVERY == 0L) {
+        if (previewEnabled && previewSurface != EGL14.EGL_NO_SURFACE && frameIndex % PREVIEW_EVERY == 0L) {
             drawPreview()
         }
         frameIndex++
+
+        val elapsed = System.nanoTime() - start
+        synchronized(workLock) {
+            workNs += elapsed
+            workFrames++
+        }
     }
 
-    private fun measureRoiLuma(): Float {
-        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, framebuffer)
-        GLES20.glViewport(0, 0, ANALYSIS_SIZE, ANALYSIS_SIZE)
-        draw(roi, gray = true)
+    /** Lance le calcul de cette image et rend le résultat de la précédente. */
+    private fun measureAsync(timestamp: Long) {
+        drawRoi()
+        val slot = (pendingSlot + 1) % 2
+        GLES30.glBindBuffer(GLES30.GL_PIXEL_PACK_BUFFER, pixelBuffers[slot])
+        GLES30.glReadPixels(0, 0, ANALYSIS_SIZE, ANALYSIS_SIZE, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, 0)
+
+        if (pendingTimestamp >= 0) {
+            GLES30.glBindBuffer(GLES30.GL_PIXEL_PACK_BUFFER, pixelBuffers[pendingSlot])
+            val mapped = GLES30.glMapBufferRange(
+                GLES30.GL_PIXEL_PACK_BUFFER, 0, ANALYSIS_SIZE * ANALYSIS_SIZE * 4, GLES30.GL_MAP_READ_BIT,
+            ) as ByteBuffer?
+            if (mapped != null) {
+                onSample(pendingTimestamp, average(mapped.order(ByteOrder.nativeOrder())))
+                GLES30.glUnmapBuffer(GLES30.GL_PIXEL_PACK_BUFFER)
+            }
+        }
+        GLES30.glBindBuffer(GLES30.GL_PIXEL_PACK_BUFFER, 0)
+        pendingSlot = slot
+        pendingTimestamp = timestamp
+    }
+
+    /** Version de secours (OpenGL ES 2) : attend le résultat du GPU. */
+    private fun measureSync(): Float {
+        drawRoi()
         readBuffer.rewind()
         GLES20.glReadPixels(
             0, 0, ANALYSIS_SIZE, ANALYSIS_SIZE,
             GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, readBuffer,
         )
+        return average(readBuffer)
+    }
+
+    private fun drawRoi() {
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, framebuffer)
+        GLES20.glViewport(0, 0, ANALYSIS_SIZE, ANALYSIS_SIZE)
+        draw(roi, gray = true)
+    }
+
+    private fun average(pixels: ByteBuffer): Float {
         var sum = 0L
         for (i in 0 until ANALYSIS_SIZE * ANALYSIS_SIZE) {
-            sum += readBuffer.get(i * 4).toInt() and 0xFF
+            sum += pixels.get(i * 4).toInt() and 0xFF
         }
         return sum / (ANALYSIS_SIZE * ANALYSIS_SIZE * 255f)
     }
@@ -174,26 +259,35 @@ class RoiAnalyzer(
         val version = IntArray(2)
         check(EGL14.eglInitialize(display, version, 0, version, 1)) { "eglInitialize" }
 
-        val configs = arrayOfNulls<EGLConfig>(1)
-        val count = IntArray(1)
-        EGL14.eglChooseConfig(
-            display,
-            intArrayOf(
-                EGL14.EGL_RED_SIZE, 8, EGL14.EGL_GREEN_SIZE, 8, EGL14.EGL_BLUE_SIZE, 8,
-                EGL14.EGL_ALPHA_SIZE, 8,
-                EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT,
-                EGL14.EGL_SURFACE_TYPE, EGL14.EGL_PBUFFER_BIT or EGL14.EGL_WINDOW_BIT,
-                EGL14.EGL_NONE,
-            ),
-            0, configs, 0, 1, count, 0,
-        )
-        check(count[0] > 0) { "Aucune configuration EGL" }
-        config = configs[0]
+        // OpenGL ES 3 si possible (lecture sans attente), sinon ES 2.
+        for (es3 in listOf(true, false)) {
+            val configs = arrayOfNulls<EGLConfig>(1)
+            val count = IntArray(1)
+            EGL14.eglChooseConfig(
+                display,
+                intArrayOf(
+                    EGL14.EGL_RED_SIZE, 8, EGL14.EGL_GREEN_SIZE, 8, EGL14.EGL_BLUE_SIZE, 8,
+                    EGL14.EGL_ALPHA_SIZE, 8,
+                    EGL14.EGL_RENDERABLE_TYPE,
+                    if (es3) EGLExt.EGL_OPENGL_ES3_BIT_KHR else EGL14.EGL_OPENGL_ES2_BIT,
+                    EGL14.EGL_SURFACE_TYPE, EGL14.EGL_PBUFFER_BIT or EGL14.EGL_WINDOW_BIT,
+                    EGL14.EGL_NONE,
+                ),
+                0, configs, 0, 1, count, 0,
+            )
+            if (count[0] == 0) continue
+            val ctx = EGL14.eglCreateContext(
+                display, configs[0], EGL14.EGL_NO_CONTEXT,
+                intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, if (es3) 3 else 2, EGL14.EGL_NONE), 0,
+            )
+            if (ctx == EGL14.EGL_NO_CONTEXT) continue
+            config = configs[0]
+            context = ctx
+            asyncReadback = es3
+            break
+        }
+        check(context != EGL14.EGL_NO_CONTEXT) { "Aucun contexte OpenGL ES" }
 
-        context = EGL14.eglCreateContext(
-            display, config, EGL14.EGL_NO_CONTEXT,
-            intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE), 0,
-        )
         pbuffer = EGL14.eglCreatePbufferSurface(
             display, config,
             intArrayOf(EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE), 0,
@@ -231,6 +325,17 @@ class RoiAnalyzer(
         )
         check(GLES20.glCheckFramebufferStatus(GLES20.GL_FRAMEBUFFER) == GLES20.GL_FRAMEBUFFER_COMPLETE) {
             "Framebuffer incomplet"
+        }
+
+        if (asyncReadback) {
+            GLES30.glGenBuffers(2, pixelBuffers, 0)
+            for (buffer in pixelBuffers) {
+                GLES30.glBindBuffer(GLES30.GL_PIXEL_PACK_BUFFER, buffer)
+                GLES30.glBufferData(
+                    GLES30.GL_PIXEL_PACK_BUFFER, ANALYSIS_SIZE * ANALYSIS_SIZE * 4, null, GLES30.GL_STREAM_READ,
+                )
+            }
+            GLES30.glBindBuffer(GLES30.GL_PIXEL_PACK_BUFFER, 0)
         }
 
         program = linkProgram(VERTEX_SHADER, FRAGMENT_SHADER)
@@ -274,11 +379,14 @@ class RoiAnalyzer(
     }
 
     companion object {
+        /** Valeur envoyée quand l'analyse est coupée (diagnostic). */
+        const val NO_LUMA = -1f
+
         /** Taille de la mini-image où l'on réduit la ROI avant d'en faire la moyenne. */
         private const val ANALYSIS_SIZE = 16
 
-        /** On analyse toutes les images, mais on n'en affiche qu'une sur 4 (~60 i/s). */
-        private const val PREVIEW_EVERY = 4L
+        /** On analyse toutes les images, mais on n'en affiche qu'une sur 8 (~30 i/s à 240 fps). */
+        private const val PREVIEW_EVERY = 8L
 
         private val FULL_FRAME = floatArrayOf(0f, 0f, 1f, 1f)
 
