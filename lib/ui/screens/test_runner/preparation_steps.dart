@@ -3,11 +3,10 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../models/camera_state.dart';
-import '../../../models/heart_rate.dart';
-import '../../../models/sensor_connection.dart';
 import '../../../models/test_protocol.dart';
 import '../../../services/app_services.dart';
 import '../../widgets/check_row.dart';
+import '../../widgets/heart_rate_panel.dart';
 import '../../widgets/numbered_steps.dart';
 import '../../widgets/protocol_icon.dart';
 import '../../widgets/safit_button.dart';
@@ -167,119 +166,16 @@ class HeartRateStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final heartRate = AppServices.of(context).heartRate;
-
-    return ValueListenableBuilder(
-      valueListenable: heartRate.state,
-      builder: (context, state, _) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (!protocol.requiresHeartRate) ...[
-              const _Notice(
-                text: 'Facultatif pour ce test : vous pouvez continuer sans ceinture.',
-              ),
-              const SizedBox(height: AppSpacing.lg),
-            ],
-            switch (state.connection) {
-              SensorConnection.connected => _ConnectedBelt(state),
-              SensorConnection.searching => const _Progress('Recherche de ceintures…'),
-              SensorConnection.connecting => const _Progress('Connexion…'),
-              SensorConnection.disconnected => _BeltSearch(
-                  devices: state.foundDevices,
-                  onScan: heartRate.scan,
-                  onConnect: heartRate.connect,
-                ),
-            },
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _ConnectedBelt extends StatelessWidget {
-  const _ConnectedBelt(this.state);
-
-  final HeartRateState state;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-
-    return SafitCard(
-      child: Column(
-        children: [
-          CheckRow(
-            label: state.device?.name ?? 'Polar H10',
-            state: CheckState.ok,
-            detail: state.batteryPercent == null ? null : 'Batterie ${state.batteryPercent} %',
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              const Icon(Icons.favorite, color: AppColors.heartRate, size: 32),
-              const SizedBox(width: AppSpacing.md),
-              Text(
-                '${state.bpm ?? '--'}',
-                style: textTheme.displayMedium?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Text('bpm', style: textTheme.titleMedium),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text('Fréquence cardiaque en direct', style: textTheme.bodySmall),
-        ],
-      ),
-    );
-  }
-}
-
-class _BeltSearch extends StatelessWidget {
-  const _BeltSearch({
-    required this.devices,
-    required this.onScan,
-    required this.onConnect,
-  });
-
-  final List<HeartRateDevice> devices;
-  final VoidCallback onScan;
-  final void Function(HeartRateDevice) onConnect;
-
-  @override
-  Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Mettez la ceinture, puis lancez la recherche.',
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        for (final device in devices) ...[
-          SafitCard(
-            onTap: () => onConnect(device),
-            child: Row(
-              children: [
-                const Icon(Icons.favorite_border, color: AppColors.heartRate),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(child: Text(device.name)),
-                const Text('Connecter', style: TextStyle(color: AppColors.accent)),
-              ],
-            ),
+        if (!protocol.requiresHeartRate) ...[
+          const _Notice(
+            text: 'Facultatif pour ce test : vous pouvez continuer sans ceinture.',
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.lg),
         ],
-        SafitButton(
-          label: 'Rechercher',
-          icon: Icons.bluetooth_searching,
-          variant: SafitButtonVariant.secondary,
-          onPressed: onScan,
-        ),
+        const HeartRatePanel(),
       ],
     );
   }
@@ -328,26 +224,6 @@ class ReadyStep extends StatelessWidget {
           text: 'La mesure démarrera d\'elle-même dès vos premiers coups de pédale.',
         ),
       ],
-    );
-  }
-}
-
-class _Progress extends StatelessWidget {
-  const _Progress(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxl),
-      child: Column(
-        children: [
-          const CircularProgressIndicator(),
-          const SizedBox(height: AppSpacing.lg),
-          Text(label, style: Theme.of(context).textTheme.bodyMedium),
-        ],
-      ),
     );
   }
 }

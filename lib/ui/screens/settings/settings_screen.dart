@@ -7,6 +7,7 @@ import '../../widgets/safit_card.dart';
 import '../../widgets/safit_header.dart';
 import '../../widgets/safit_page.dart';
 import '../../widgets/section_header.dart';
+import '../sensors/heart_rate_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -32,7 +33,7 @@ class SettingsScreen extends StatelessWidget {
               Icons.favorite_border,
               'Polar H10',
               iconColor: AppColors.heartRate,
-              onTap: soon,
+              onTap: () => HeartRateScreen.open(context),
             ),
           ]),
           _SettingsGroup(title: 'Ergocycle', tiles: [

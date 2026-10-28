@@ -19,6 +19,7 @@ import '../../widgets/safit_logo.dart';
 import '../../widgets/safit_page.dart';
 import '../../widgets/section_header.dart';
 import '../../widgets/status_tile.dart';
+import '../sensors/heart_rate_screen.dart';
 import '../settings/settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -136,8 +137,7 @@ class _HeartRateTile extends StatelessWidget {
       label: 'Polar H10',
       status: status,
       level: level,
-      // Ouvrira l'écran Polar dédié quand il existera.
-      onTap: () => SettingsScreen.open(context),
+      onTap: () => HeartRateScreen.open(context),
     );
   }
 }

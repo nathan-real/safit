@@ -67,13 +67,13 @@ void main() {
     expect(find.text('Présentation'), findsOneWidget);
   });
 
-  testWidgets('Les cartes capteurs ouvrent les réglages', (tester) async {
+  testWidgets('Les cartes capteurs ouvrent leurs écrans', (tester) async {
     await tester.pumpWidget(SafitApp(services: services));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Polar H10'));
     await tester.pumpAndSettle();
-    expect(find.text('Mode expert'), findsOneWidget);
+    expect(find.text('Bien porter la ceinture'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Retour'));
     await tester.pumpAndSettle();
