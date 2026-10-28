@@ -7,6 +7,7 @@ import '../../widgets/safit_card.dart';
 import '../../widgets/safit_header.dart';
 import '../../widgets/safit_page.dart';
 import '../../widgets/section_header.dart';
+import '../expert/camera_lab_screen.dart';
 import '../sensors/heart_rate_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -49,6 +50,12 @@ class SettingsScreen extends StatelessWidget {
               'Mode expert',
               subtitle: 'Zone de détection, calibration, diagnostic',
               onTap: soon,
+            ),
+            _SettingsTile(
+              Icons.speed,
+              'Prototype caméra 240 fps',
+              subtitle: 'Test de l\'analyse en direct',
+              onTap: () => CameraLabScreen.open(context),
             ),
           ]),
         ],
