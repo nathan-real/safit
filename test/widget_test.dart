@@ -63,8 +63,8 @@ void main() {
     }
 
     await tester.tap(find.text(TestProtocol.frictionCalibration.title));
-    await tester.pump();
-    expect(find.text('Bientôt disponible'), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.text('Présentation'), findsOneWidget);
   });
 
   testWidgets('Les cartes capteurs ouvrent les réglages', (tester) async {

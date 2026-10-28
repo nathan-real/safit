@@ -7,6 +7,13 @@ enum TestProtocol {
     objective: 'Estimer l\'aptitude aérobie : la pente fréquence cardiaque / '
         'puissance est un indicateur de la VO2max.',
     duration: '2 × 5 min',
+    requiresHeartRate: true,
+    procedure: [
+      'Pédalez 5 min à une allure régulière.',
+      'Au signal, arrêtez de pédaler : le volant ralentit seul.',
+      'Reposez-vous pendant que la courroie est resserrée.',
+      'Pédalez à nouveau 5 min, puis arrêtez au signal.',
+    ],
   ),
   incremental(
     title: 'Test incrémental',
@@ -15,6 +22,14 @@ enum TestProtocol {
         'Un bip signale chaque changement.',
     objective: 'Suivre la réponse cardiaque quand l\'effort augmente.',
     duration: '≈ 7 min + 2 min récup.',
+    requiresHeartRate: true,
+    procedure: [
+      'Commencez à pédaler à 40 rpm.',
+      'À chaque bip (environ toutes les minutes), augmentez de 10 rpm, '
+          'jusqu\'à 80 rpm.',
+      'Votre cadence s\'affiche : restez proche de la cible.',
+      'Au dernier signal, arrêtez de pédaler et récupérez 2 min.',
+    ],
   ),
   forceVelocity(
     title: 'Test force-vitesse',
@@ -23,6 +38,12 @@ enum TestProtocol {
         'La mesure démarre au premier coup de pédale.',
     objective: 'Mesurer la puissance maximale et le profil force-vitesse.',
     duration: '6 – 8 s',
+    requiresHeartRate: false,
+    procedure: [
+      'Placez-vous à l\'arrêt, une pédale en haut.',
+      'Sprintez au maximum pendant 6 à 8 secondes.',
+      'Au signal, arrêtez de pédaler : le volant ralentit seul.',
+    ],
   ),
   frictionCalibration(
     title: 'Calibration friction',
@@ -31,6 +52,12 @@ enum TestProtocol {
         'la décélération donne la force de friction.',
     objective: 'Étalonner la force de freinage de la courroie.',
     duration: '< 1 min',
+    requiresHeartRate: false,
+    procedure: [
+      'Pédalez quelques secondes pour lancer le volant.',
+      'Arrêtez de pédaler et ne touchez plus les pédales.',
+      'La mesure s\'arrête quand le volant est immobile.',
+    ],
   );
 
   const TestProtocol({
@@ -39,6 +66,8 @@ enum TestProtocol {
     required this.description,
     required this.objective,
     required this.duration,
+    required this.requiresHeartRate,
+    required this.procedure,
   });
 
   final String title;
@@ -50,4 +79,10 @@ enum TestProtocol {
 
   /// Durée approximative, affichée telle quelle.
   final String duration;
+
+  /// Faux si le test reste exploitable sans ceinture cardiaque.
+  final bool requiresHeartRate;
+
+  /// Déroulement du test, étape par étape, tel qu'expliqué à l'utilisateur.
+  final List<String> procedure;
 }

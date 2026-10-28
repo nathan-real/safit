@@ -4,16 +4,23 @@ import '../../core/theme/app_spacing.dart';
 
 /// Gabarit commun des écrans : header fixe + contenu défilant,
 /// centré et limité en largeur sur les grands écrans.
+/// [bottom] reste fixé en bas (ex. bouton « Continuer »).
 class SafitPage extends StatelessWidget {
-  const SafitPage({super.key, required this.header, required this.children});
+  const SafitPage({
+    super.key,
+    required this.header,
+    required this.children,
+    this.bottom,
+  });
 
   final Widget header;
   final List<Widget> children;
+  final Widget? bottom;
 
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      bottom: false,
+      bottom: bottom != null,
       child: Align(
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
@@ -32,6 +39,16 @@ class SafitPage extends StatelessWidget {
                   children: children,
                 ),
               ),
+              if (bottom != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.page,
+                    AppSpacing.sm,
+                    AppSpacing.page,
+                    AppSpacing.lg,
+                  ),
+                  child: bottom,
+                ),
             ],
           ),
         ),

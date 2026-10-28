@@ -116,6 +116,13 @@ abstract final class AppTheme {
         textColor: AppColors.textPrimary,
         contentPadding: EdgeInsets.symmetric(horizontal: AppSpacing.lg),
       ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: AppColors.surfaceRaised,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+        ),
+      ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: AppColors.surfaceRaised,

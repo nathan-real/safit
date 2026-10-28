@@ -3,11 +3,11 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../models/test_protocol.dart';
-import '../../widgets/coming_soon.dart';
 import '../../widgets/protocol_icon.dart';
 import '../../widgets/safit_header.dart';
 import '../../widgets/safit_list_tile.dart';
 import '../../widgets/safit_page.dart';
+import '../test_runner/preparation_flow.dart';
 
 class TestsScreen extends StatelessWidget {
   const TestsScreen({super.key});
@@ -34,8 +34,7 @@ class TestsScreen extends StatelessWidget {
                 _InfoLine(icon: Icons.timer_outlined, text: protocol.duration),
               ],
             ),
-            // Lancera la préparation du test (ticket suivant).
-            onTap: () => showComingSoon(context),
+            onTap: () => PreparationFlow.open(context, protocol),
           ),
           const SizedBox(height: AppSpacing.md),
         ],
