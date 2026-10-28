@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'app.dart';
 import 'core/theme/app_colors.dart';
+import 'services/app_services.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,5 +21,6 @@ void main() {
     ),
   );
 
-  runApp(const SafitApp());
+  // Pour passer aux vrais capteurs, c'est ici qu'on changera de registre.
+  runApp(SafitApp(services: ServiceRegistry.mock()));
 }

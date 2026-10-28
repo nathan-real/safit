@@ -1,11 +1,17 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:safit/app.dart';
+import 'package:safit/services/app_services.dart';
 
 void main() {
+  late ServiceRegistry services;
+
+  setUp(() => services = ServiceRegistry.mock(live: false));
+  tearDown(() => services.dispose());
+
   testWidgets('La coque navigue entre les onglets et ouvre les réglages',
       (tester) async {
-    await tester.pumpWidget(const SafitApp());
+    await tester.pumpWidget(SafitApp(services: services));
 
     expect(find.text('Nouveau test'), findsOneWidget);
 
@@ -27,10 +33,19 @@ void main() {
   });
 
   testWidgets('« Nouveau test » mène à l\'onglet Tests', (tester) async {
-    await tester.pumpWidget(const SafitApp());
+    await tester.pumpWidget(SafitApp(services: services));
 
     await tester.tap(find.text('Nouveau test'));
     await tester.pumpAndSettle();
     expect(find.text('Choisir un test'), findsOneWidget);
+  });
+
+  testWidgets('L\'accueil affiche l\'état des capteurs simulés', (tester) async {
+    await tester.pumpWidget(SafitApp(services: services));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Connectée · 72 bpm'), findsOneWidget);
+    expect(find.text('Prête · 240 fps'), findsOneWidget);
+    expect(find.text('Test incrémental'), findsOneWidget);
   });
 }

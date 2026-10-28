@@ -2,10 +2,18 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../core/utils/formatters.dart';
+import '../../../models/camera_state.dart';
+import '../../../models/heart_rate.dart';
+import '../../../models/sensor_connection.dart';
+import '../../../models/test_result.dart';
+import '../../../services/app_services.dart';
 import '../../shell/app_shell.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/protocol_icon.dart';
 import '../../widgets/safit_button.dart';
 import '../../widgets/safit_header.dart';
+import '../../widgets/safit_list_tile.dart';
 import '../../widgets/safit_logo.dart';
 import '../../widgets/safit_page.dart';
 import '../../widgets/section_header.dart';
@@ -14,10 +22,13 @@ import '../../widgets/status_tile.dart';
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
+  static const _recentCount = 2;
+
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final shell = AppShell.of(context);
+    final services = AppServices.of(context);
 
     return SafitPage(
       header: const SafitHeader(titleWidget: SafitLogo()),
@@ -36,25 +47,19 @@ class HomeScreen extends StatelessWidget {
           onPressed: () => shell.goTo(AppTab.tests),
         ),
         const SectionHeader(title: 'État du système'),
-        // États figés : seront branchés aux services BLE / caméra.
-        const Row(
+        Row(
           children: [
             Expanded(
-              child: StatusTile(
-                icon: Icons.favorite_border,
-                iconColor: AppColors.heartRate,
-                label: 'Polar H10',
-                status: 'Non connectée',
-                level: StatusLevel.off,
+              child: ValueListenableBuilder(
+                valueListenable: services.heartRate.state,
+                builder: (_, state, _) => _HeartRateTile(state),
               ),
             ),
-            SizedBox(width: AppSpacing.md),
+            const SizedBox(width: AppSpacing.md),
             Expanded(
-              child: StatusTile(
-                icon: Icons.photo_camera_outlined,
-                label: 'Caméra',
-                status: 'Non configurée',
-                level: StatusLevel.off,
+              child: ValueListenableBuilder(
+                valueListenable: services.camera.state,
+                builder: (_, state, _) => _CameraTile(state),
               ),
             ),
           ],
@@ -64,12 +69,97 @@ class HomeScreen extends StatelessWidget {
           actionLabel: 'Voir tout',
           onAction: () => shell.goTo(AppTab.results),
         ),
-        const EmptyState(
-          icon: Icons.history,
-          title: 'Aucun test pour l\'instant',
-          message: 'Vos derniers tests apparaîtront ici.',
+        FutureBuilder(
+          future: services.results.listResults(),
+          builder: (context, snapshot) {
+            final results = snapshot.data;
+            if (results == null) return const SizedBox.shrink();
+            if (results.isEmpty) {
+              return const EmptyState(
+                icon: Icons.history,
+                title: 'Aucun test pour l\'instant',
+                message: 'Vos derniers tests apparaîtront ici.',
+              );
+            }
+            return Column(
+              children: [
+                for (final result in results.take(_recentCount)) ...[
+                  _RecentTestTile(result),
+                  const SizedBox(height: AppSpacing.md),
+                ],
+              ],
+            );
+          },
         ),
       ],
+    );
+  }
+}
+
+class _HeartRateTile extends StatelessWidget {
+  const _HeartRateTile(this.state);
+
+  final HeartRateState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final (status, level) = switch (state.connection) {
+      SensorConnection.connected => ('Connectée · ${state.bpm ?? '--'} bpm', StatusLevel.ready),
+      SensorConnection.searching => ('Recherche…', StatusLevel.pending),
+      SensorConnection.connecting => ('Connexion…', StatusLevel.pending),
+      SensorConnection.disconnected => ('Non connectée', StatusLevel.off),
+    };
+    return StatusTile(
+      icon: Icons.favorite_border,
+      iconColor: AppColors.heartRate,
+      label: 'Polar H10',
+      status: status,
+      level: level,
+    );
+  }
+}
+
+class _CameraTile extends StatelessWidget {
+  const _CameraTile(this.state);
+
+  final CameraState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final (status, level) = switch (state.status) {
+      CameraStatus.ready => ('Prête · ${state.fps?.round() ?? '--'} fps', StatusLevel.ready),
+      CameraStatus.checking => ('Vérification…', StatusLevel.pending),
+      CameraStatus.error => ('Erreur', StatusLevel.off),
+      CameraStatus.notConfigured => ('Non configurée', StatusLevel.off),
+    };
+    return StatusTile(
+      icon: Icons.photo_camera_outlined,
+      label: 'Caméra',
+      status: status,
+      level: level,
+    );
+  }
+}
+
+class _RecentTestTile extends StatelessWidget {
+  const _RecentTestTile(this.result);
+
+  final TestResult result;
+
+  @override
+  Widget build(BuildContext context) {
+    final metrics = [
+      if (result.avgPowerW != null) '${result.avgPowerW!.round()} W',
+      if (result.peakPowerW != null) 'Pmax ${result.peakPowerW!.round()} W',
+      if (result.avgHeartRateBpm != null) '${result.avgHeartRateBpm} bpm',
+      if (result.avgPowerW == null && result.frictionForceN != null)
+        '${result.frictionForceN!.toStringAsFixed(1)} N',
+    ];
+    return SafitListTile(
+      icon: result.protocol.icon,
+      title: result.protocol.title,
+      subtitle: formatDateTime(result.date),
+      footer: Text(metrics.join(' · ')),
     );
   }
 }
