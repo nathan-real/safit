@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:safit/app.dart';
+import 'package:safit/models/test_protocol.dart';
 import 'package:safit/services/app_services.dart';
 
 void main() {
@@ -48,6 +49,22 @@ void main() {
     expect(find.text('Connectée · 72 bpm'), findsOneWidget);
     expect(find.text('Prête · 240 fps'), findsOneWidget);
     expect(find.text('Test incrémental'), findsOneWidget);
+  });
+
+  testWidgets('Chaque test affiche son objectif et sa durée', (tester) async {
+    await tester.pumpWidget(SafitApp(services: services));
+    await tester.tap(find.text('Tests'));
+    await tester.pumpAndSettle();
+
+    for (final protocol in TestProtocol.values) {
+      await tester.scrollUntilVisible(find.text(protocol.duration), 100);
+      expect(find.text(protocol.objective), findsOneWidget);
+      expect(find.text(protocol.duration), findsOneWidget);
+    }
+
+    await tester.tap(find.text(TestProtocol.frictionCalibration.title));
+    await tester.pump();
+    expect(find.text('Bientôt disponible'), findsOneWidget);
   });
 
   testWidgets('Les cartes capteurs ouvrent les réglages', (tester) async {

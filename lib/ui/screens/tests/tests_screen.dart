@@ -22,17 +22,51 @@ class TestsScreen extends StatelessWidget {
             icon: protocol.icon,
             title: protocol.title,
             subtitle: protocol.description,
-            footer: Row(
+            footer: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.timer_outlined, size: 14, color: AppColors.textSecondary),
-                const SizedBox(width: AppSpacing.xs),
-                Text(protocol.duration),
+                _InfoLine(
+                  icon: Icons.flag_outlined,
+                  text: protocol.objective,
+                  color: AppColors.textPrimary,
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                _InfoLine(icon: Icons.timer_outlined, text: protocol.duration),
               ],
             ),
+            // Lancera la préparation du test (ticket suivant).
             onTap: () => showComingSoon(context),
           ),
           const SizedBox(height: AppSpacing.md),
         ],
+      ],
+    );
+  }
+}
+
+/// Petite ligne « icône + texte » sous la description d'un test.
+class _InfoLine extends StatelessWidget {
+  const _InfoLine({
+    required this.icon,
+    required this.text,
+    this.color = AppColors.textSecondary,
+  });
+
+  final IconData icon;
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 1),
+          child: Icon(icon, size: 14, color: color),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(child: Text(text, style: TextStyle(color: color))),
       ],
     );
   }
