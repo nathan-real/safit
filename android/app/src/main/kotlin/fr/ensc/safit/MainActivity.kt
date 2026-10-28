@@ -22,7 +22,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
-        camera?.stop()
+        camera?.releaseNow()
         super.onDestroy()
     }
 }

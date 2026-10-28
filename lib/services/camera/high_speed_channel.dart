@@ -14,8 +14,7 @@ class HighSpeedSession {
         highSpeed = m['highSpeed'] as bool,
         cameraId = m['cameraId'] as String,
         sensorOrientation = m['sensorOrientation'] as int,
-        highSpeedOptions = (m['highSpeedOptions'] as List).cast<String>(),
-        asyncReadback = m['asyncReadback'] as bool;
+        highSpeedOptions = (m['highSpeedOptions'] as List).cast<String>();
 
   /// Texture Flutter où s'affiche l'aperçu.
   final int textureId;
@@ -34,9 +33,6 @@ class HighSpeedSession {
 
   /// Modes haute vitesse proposés par le téléphone, ex. « 1280x720@240 ».
   final List<String> highSpeedOptions;
-
-  /// Vrai si le résultat du GPU est lu sans l'attendre (OpenGL ES 3).
-  final bool asyncReadback;
 }
 
 /// Lot de mesures envoyé environ toutes les 50 ms.
@@ -45,20 +41,24 @@ class SampleBatch {
       : timestampsNs = m['t'] as Int64List,
         luma = m['y'] as Float32List,
         sensorFrames = m['sensorFrames'] as int,
-        workUs = m['workUs'] as int;
+        encodedFrames = m['encodedFrames'] as int,
+        lastEncodedNs = m['lastEncodedNs'] as int;
 
-  /// Horodatage capteur de chaque image (nanosecondes).
+  /// Horodatage capteur de chaque image analysée (nanosecondes).
   final Int64List timestampsNs;
 
-  /// Luminosité moyenne de la zone de détection (0 = noir, 1 = blanc),
-  /// ou une valeur négative si l'analyse est coupée.
+  /// Luminosité moyenne de la zone de détection (0 = noir, 1 = blanc).
   final Float32List luma;
 
-  /// Total d'images sorties du capteur depuis le démarrage.
+  /// Total d'images sorties du capteur depuis le démarrage (-1 si inconnu).
   final int sensorFrames;
 
-  /// Temps moyen de traitement d'une image côté natif (µs), ou -1.
-  final int workUs;
+  /// Total d'images vidéo encodées (-1 si inconnu).
+  final int encodedFrames;
+
+  /// Horodatage de la dernière image vidéo encodée (-1 si inconnu) :
+  /// l'écart avec la dernière image analysée donne le retard de l'analyse.
+  final int lastEncodedNs;
 }
 
 /// Accès à la caméra haute fréquence (Android uniquement pour l'instant).
@@ -79,6 +79,7 @@ class HighSpeedCameraChannel {
     return HighSpeedSession.fromMap(result!);
   }
 
+  /// Arrête la caméra ; se termine quand toutes les images filmées sont analysées.
   Future<void> stop() => _methods.invokeMethod('stop');
 
   Future<void> setRoi(Rect roi) => _methods.invokeMethod('setRoi', _roiArgs(roi));
@@ -86,13 +87,11 @@ class HighSpeedCameraChannel {
   Future<void> setExposureLocked(bool locked) =>
       _methods.invokeMethod('setExposureLocked', locked);
 
-  /// Diagnostic : coupe l'affichage de l'aperçu.
-  Future<void> setPreviewEnabled(bool enabled) =>
-      _methods.invokeMethod('setPreviewEnabled', enabled);
+  /// Commence à enregistrer la vidéo ; renvoie le chemin du futur fichier MP4.
+  Future<String?> startRecording() => _methods.invokeMethod<String>('startRecording');
 
-  /// Diagnostic : coupe l'analyse (on ne garde que l'heure de chaque image).
-  Future<void> setAnalysisEnabled(bool enabled) =>
-      _methods.invokeMethod('setAnalysisEnabled', enabled);
+  /// Termine la vidéo ; renvoie son chemin (null si rien n'a été écrit).
+  Future<String?> stopRecording() => _methods.invokeMethod<String>('stopRecording');
 
   /// Dossier où enregistrer les fichiers de mesures, accessible en USB
   /// (Android/data/fr.ensc.safit/files).

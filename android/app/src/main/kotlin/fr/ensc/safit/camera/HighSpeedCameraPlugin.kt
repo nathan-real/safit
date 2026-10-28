@@ -10,6 +10,10 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.view.TextureRegistry
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -17,10 +21,10 @@ import kotlin.math.roundToInt
  * Pont avec Flutter.
  *
  * - `safit/highspeed` (méthodes) : start, stop, setRoi, setExposureLocked,
- *   setPreviewEnabled, setAnalysisEnabled, outputDirectory.
+ *   startRecording, stopRecording, outputDirectory.
  * - `safit/highspeed/samples` (flux) : toutes les ~50 ms, un lot
- *   `{t: horodatages ns, y: luminosités 0..1 (-1 si analyse coupée),
- *   sensorFrames: images sorties du capteur, workUs: temps moyen de traitement d'une image}`.
+ *   `{t: horodatages ns, y: luminosités 0..1, sensorFrames: images sorties du capteur,
+ *   encodedFrames: images vidéo encodées, lastEncodedNs: heure de la dernière image vidéo}`.
  */
 class HighSpeedCameraPlugin(private val activity: Activity, engine: FlutterEngine) :
     MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
@@ -30,11 +34,12 @@ class HighSpeedCameraPlugin(private val activity: Activity, engine: FlutterEngin
     private var sink: EventChannel.EventSink? = null
 
     private var camera: HighSpeedCamera? = null
-    private var analyzer: RoiAnalyzer? = null
+    private var pipeline: VideoPipeline? = null
+    private var preview: PreviewRenderer? = null
     private var producer: TextureRegistry.SurfaceProducer? = null
     private var pendingStart: Pair<MethodCall, MethodChannel.Result>? = null
 
-    // Échantillons en attente d'envoi (écrits par le thread GL, lus par le thread principal).
+    // Échantillons en attente d'envoi (écrits par le thread décodeur, lus par le thread principal).
     private val lock = Any()
     private var times = LongArray(1024)
     private var lumas = FloatArray(1024)
@@ -63,26 +68,35 @@ class HighSpeedCameraPlugin(private val activity: Activity, engine: FlutterEngin
                     activity.requestPermissions(arrayOf(Manifest.permission.CAMERA), PERMISSION_REQUEST)
                 }
             }
-            "stop" -> {
-                stop()
-                result.success(null)
-            }
+            "stop" -> stop { result.success(null) }
             "setRoi" -> {
                 val r = call.arguments<List<Double>>()!!
-                analyzer?.setRoi(r[0].toFloat(), r[1].toFloat(), r[2].toFloat(), r[3].toFloat())
+                pipeline?.setRoi(r[0].toFloat(), r[1].toFloat(), r[2].toFloat(), r[3].toFloat())
                 result.success(null)
             }
             "setExposureLocked" -> {
                 camera?.setExposureLocked(call.arguments<Boolean>() == true)
                 result.success(null)
             }
-            "setPreviewEnabled" -> {
-                analyzer?.previewEnabled = call.arguments<Boolean>() == true
-                result.success(null)
+            "startRecording" -> {
+                val p = pipeline
+                val dir = activity.getExternalFilesDir(null)
+                if (p == null || dir == null) {
+                    result.error("recording", "Caméra non démarrée", null)
+                } else {
+                    val stamp = SimpleDateFormat("yyyy-MM-dd'T'HH-mm-ss", Locale.ROOT).format(Date())
+                    val file = File(dir, "safit_video_$stamp.mp4")
+                    p.startRecording(file)
+                    result.success(file.absolutePath)
+                }
             }
-            "setAnalysisEnabled" -> {
-                analyzer?.analysisEnabled = call.arguments<Boolean>() == true
-                result.success(null)
+            "stopRecording" -> {
+                val p = pipeline
+                if (p == null) {
+                    result.success(null)
+                } else {
+                    Thread { p.stopRecording().let { mainHandler.post { result.success(it) } } }.start()
+                }
             }
             "outputDirectory" -> result.success(activity.getExternalFilesDir(null)?.absolutePath)
             else -> result.notImplemented()
@@ -102,10 +116,10 @@ class HighSpeedCameraPlugin(private val activity: Activity, engine: FlutterEngin
     }
 
     private fun start(call: MethodCall, result: MethodChannel.Result) {
-        stop()
+        releaseNow()
         var answered = false
         fun fail(message: String) = mainHandler.post {
-            stop()
+            releaseNow()
             if (!answered) {
                 answered = true
                 result.error("camera", message, null)
@@ -117,36 +131,41 @@ class HighSpeedCameraPlugin(private val activity: Activity, engine: FlutterEngin
         try {
             val cam = HighSpeedCamera(activity)
             val config = cam.selectConfig()
+            val w = config.size.width
+            val h = config.size.height
+
+            val video = VideoPipeline(w, h, config.fps, config.sensorOrientation, ::addSample)
+            video.start()
+            call.argument<List<Double>>("roi")?.let {
+                video.setRoi(it[0].toFloat(), it[1].toFloat(), it[2].toFloat(), it[3].toFloat())
+            }
 
             // L'aperçu est affiché en portrait : on échange largeur et hauteur si le
             // capteur est tourné, et on le réduit (côté long = 640 px).
             val rotated = config.sensorOrientation % 180 != 0
-            val w = if (rotated) config.size.height else config.size.width
-            val h = if (rotated) config.size.width else config.size.height
-            val scale = PREVIEW_LONG_SIDE.toFloat() / max(w, h)
-            val previewW = (w * scale).roundToInt()
-            val previewH = (h * scale).roundToInt()
+            val portraitW = if (rotated) h else w
+            val portraitH = if (rotated) w else h
+            val scale = PREVIEW_LONG_SIDE.toFloat() / max(portraitW, portraitH)
+            val previewW = (portraitW * scale).roundToInt()
+            val previewH = (portraitH * scale).roundToInt()
 
-            val an = RoiAnalyzer(config.size.width, config.size.height, config.sensorOrientation, ::addSample)
-            an.start()
-            call.argument<List<Double>>("roi")?.let {
-                an.setRoi(it[0].toFloat(), it[1].toFloat(), it[2].toFloat(), it[3].toFloat())
-            }
-
+            val renderer = PreviewRenderer(w, h, config.sensorOrientation)
+            renderer.start()
             val prod = textures.createSurfaceProducer()
             prod.setSize(previewW, previewH)
             prod.setCallback(object : TextureRegistry.SurfaceProducer.Callback {
-                override fun onSurfaceAvailable() = an.setPreviewSurface(prod.surface, previewW, previewH)
-                override fun onSurfaceCleanup() = an.setPreviewSurface(null, 0, 0)
+                override fun onSurfaceAvailable() = renderer.setOutput(prod.surface, previewW, previewH)
+                override fun onSurfaceCleanup() = renderer.setOutput(null, 0, 0)
             })
-            an.setPreviewSurface(prod.surface, previewW, previewH)
+            renderer.setOutput(prod.surface, previewW, previewH)
 
             camera = cam
-            analyzer = an
+            pipeline = video
+            preview = renderer
             producer = prod
             synchronized(lock) { count = 0 }
 
-            cam.open(config, an.inputSurface, onReady = {
+            cam.open(config, listOf(video.inputSurface, renderer.inputSurface), onReady = {
                 mainHandler.post {
                     mainHandler.post(flushTask)
                     if (!answered) {
@@ -156,14 +175,13 @@ class HighSpeedCameraPlugin(private val activity: Activity, engine: FlutterEngin
                                 "textureId" to prod.id(),
                                 "previewWidth" to previewW,
                                 "previewHeight" to previewH,
-                                "captureWidth" to config.size.width,
-                                "captureHeight" to config.size.height,
+                                "captureWidth" to w,
+                                "captureHeight" to h,
                                 "fps" to config.fps,
                                 "highSpeed" to config.highSpeed,
                                 "cameraId" to config.cameraId,
                                 "sensorOrientation" to config.sensorOrientation,
                                 "highSpeedOptions" to config.highSpeedOptions,
-                                "asyncReadback" to an.asyncReadback,
                             ),
                         )
                     }
@@ -174,12 +192,40 @@ class HighSpeedCameraPlugin(private val activity: Activity, engine: FlutterEngin
         }
     }
 
-    fun stop() {
+    /**
+     * Arrêt propre : on coupe la caméra, puis on laisse le décodeur finir
+     * d'analyser les images déjà filmées avant de tout libérer.
+     */
+    private fun stop(onDone: () -> Unit) {
+        val cam = camera
+        val video = pipeline
+        camera = null
+        pipeline = null
+        Thread {
+            cam?.close()
+            video?.finish(FINISH_TIMEOUT_MS)
+            mainHandler.post {
+                mainHandler.removeCallbacks(flushTask)
+                flush(video)
+                releasePreview()
+                onDone()
+            }
+        }.start()
+    }
+
+    /** Libération immédiate, sans attendre l'analyse (redémarrage, fermeture de l'app). */
+    fun releaseNow() {
         mainHandler.removeCallbacks(flushTask)
         camera?.close()
         camera = null
-        analyzer?.release()
-        analyzer = null
+        pipeline?.finish(0)
+        pipeline = null
+        releasePreview()
+    }
+
+    private fun releasePreview() {
+        preview?.release()
+        preview = null
         producer?.release()
         producer = null
     }
@@ -196,7 +242,7 @@ class HighSpeedCameraPlugin(private val activity: Activity, engine: FlutterEngin
         }
     }
 
-    private fun flush() {
+    private fun flush(video: VideoPipeline? = pipeline) {
         val t: LongArray
         val y: FloatArray
         synchronized(lock) {
@@ -204,13 +250,13 @@ class HighSpeedCameraPlugin(private val activity: Activity, engine: FlutterEngin
             y = lumas.copyOf(count)
             count = 0
         }
-        if (t.isEmpty()) return
         sink?.success(
             mapOf(
                 "t" to t,
                 "y" to y,
-                "sensorFrames" to (camera?.sensorFrames?.get() ?: 0L),
-                "workUs" to (analyzer?.takeAverageWorkUs() ?: -1),
+                "sensorFrames" to (camera?.sensorFrames?.get() ?: -1L),
+                "encodedFrames" to (video?.encodedFrames?.get() ?: -1L),
+                "lastEncodedNs" to (video?.lastEncodedNs ?: -1L),
             ),
         )
     }
@@ -227,5 +273,8 @@ class HighSpeedCameraPlugin(private val activity: Activity, engine: FlutterEngin
         private const val PERMISSION_REQUEST = 4201
         private const val FLUSH_INTERVAL_MS = 50L
         private const val PREVIEW_LONG_SIDE = 640
+
+        /** Temps laissé au décodeur pour finir l'analyse après l'arrêt. */
+        private const val FINISH_TIMEOUT_MS = 30_000L
     }
 }

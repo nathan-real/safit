@@ -13,8 +13,9 @@ import 'luma_chart.dart';
 import 'roi_overlay.dart';
 
 /// Écran de test de la caméra haute fréquence (mode expert).
-/// Sert à vérifier sur un vrai téléphone qu'on analyse bien ~240 images/s
-/// en direct, et à enregistrer les mesures pour les étudier sur ordinateur.
+/// La vidéo est encodée à ~240 fps ; chaque image est décodée et analysée
+/// (luminosité de la zone de détection). On vérifie ici que la vidéo tient
+/// la cadence et que l'analyse suit, et on enregistre vidéo + CSV.
 class CameraLabScreen extends StatefulWidget {
   const CameraLabScreen({super.key});
 
@@ -39,13 +40,13 @@ class _CameraLabScreenState extends State<CameraLabScreen> {
 
   Future<void> _toggleRecording() async {
     if (!_lab.isRecording) {
-      _lab.startRecording();
+      await _lab.startRecording();
       return;
     }
-    final path = await _lab.stopRecording();
-    if (path != null && mounted) {
+    final paths = await _lab.stopRecording();
+    if (paths.isNotEmpty && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Mesures enregistrées :\n$path')),
+        SnackBar(content: Text('Enregistré :\n${paths.join('\n')}')),
       );
     }
   }
@@ -66,10 +67,10 @@ class _CameraLabScreenState extends State<CameraLabScreen> {
                     onPressed: _lab.starting ? null : _lab.start,
                   )
                 : SafitButton(
-                    label: 'Arrêter',
+                    label: _lab.stopping ? 'Analyse des dernières images…' : 'Arrêter',
                     icon: Icons.stop_rounded,
                     variant: SafitButtonVariant.danger,
-                    onPressed: _lab.stop,
+                    onPressed: _lab.stopping ? null : _lab.stop,
                   ),
             children: session == null ? _intro(context) : _running(context, session),
           );
@@ -82,16 +83,16 @@ class _CameraLabScreenState extends State<CameraLabScreen> {
     final textTheme = Theme.of(context).textTheme;
     return [
       Text(
-        'Cet écran vérifie que le téléphone peut analyser la caméra en direct, '
-        'sans enregistrer de vidéo.',
+        'La caméra filme en vidéo à 240 images/s. Chaque image de la vidéo est '
+        'analysée : on mesure la luminosité du rectangle vert.',
         style: textTheme.bodyMedium,
       ),
       const SizedBox(height: AppSpacing.lg),
       SafitCard(
         child: Text(
-          'À chaque image, l\'app mesure la luminosité du rectangle vert, '
-          'puis jette l\'image. Placez le rectangle sur les traits noirs '
-          'et faites tourner le volant.',
+          'Placez le rectangle sur les traits noirs et faites tourner le volant. '
+          'Si l\'analyse prend du retard, elle le rattrape après l\'arrêt : '
+          'aucune image n\'est perdue.',
           style: textTheme.bodySmall,
         ),
       ),
@@ -99,20 +100,15 @@ class _CameraLabScreenState extends State<CameraLabScreen> {
         const SizedBox(height: AppSpacing.lg),
         Text(_lab.error!, style: textTheme.bodyMedium?.copyWith(color: AppColors.danger)),
       ],
-      if (_lab.lastSavedPath != null) ...[
-        const SizedBox(height: AppSpacing.lg),
-        Text('Dernier fichier : ${_lab.lastSavedPath}', style: textTheme.bodySmall),
-      ],
+      ..._savedFiles(textTheme),
     ];
   }
 
   List<Widget> _running(BuildContext context, HighSpeedSession session) {
     final textTheme = Theme.of(context).textTheme;
     final stats = _lab.stats;
-    final fpsOk = stats.fps >= session.fps * 0.95;
-    // Budget de temps par image pour tenir la fréquence demandée (4,2 ms à 240 fps).
-    final budgetMs = 1000 / session.fps;
-    final workMs = _lab.workMs;
+    final target = session.fps;
+    Color? okIf(bool ok) => ok ? AppColors.accent : AppColors.warning;
 
     return [
       Text(
@@ -122,12 +118,6 @@ class _CameraLabScreenState extends State<CameraLabScreen> {
         style: textTheme.bodySmall?.copyWith(
           color: session.highSpeed ? AppColors.accent : AppColors.warning,
         ),
-      ),
-      Text(
-        session.asyncReadback
-            ? 'Lecture du calcul sans attente (OpenGL ES 3)'
-            : 'Lecture du calcul avec attente (OpenGL ES 2)',
-        style: textTheme.bodySmall,
       ),
       const SizedBox(height: AppSpacing.md),
       Center(
@@ -156,48 +146,19 @@ class _CameraLabScreenState extends State<CameraLabScreen> {
       ),
       const SectionHeader(title: 'Mesures'),
       _StatsGrid(items: [
-        ('Images analysées /s', stats.fps.toStringAsFixed(0), fpsOk ? AppColors.accent : AppColors.warning),
         ('Images capteur /s', _lab.sensorFps.toStringAsFixed(0), null),
+        ('Images vidéo /s', _lab.videoFps.toStringAsFixed(0), okIf(_lab.videoFps >= target * 0.9)),
+        ('Images analysées /s', stats.fps.toStringAsFixed(0), okIf(stats.fps >= target * 0.9)),
+        (
+          'Retard de l\'analyse',
+          '${_lab.analysisLagMs.toStringAsFixed(0)} ms',
+          okIf(_lab.analysisLagMs < 500),
+        ),
         ('Images perdues', '${stats.droppedFrames}', stats.droppedFrames == 0 ? null : AppColors.warning),
         ('Plus grand trou', '${stats.maxGapMs.toStringAsFixed(1)} ms', null),
-        (
-          'Calcul / image',
-          workMs == null ? '--' : '${workMs.toStringAsFixed(2)} ms',
-          workMs == null ? null : (workMs < budgetMs ? AppColors.accent : AppColors.warning),
-        ),
-        ('Budget / image', '${budgetMs.toStringAsFixed(2)} ms', null),
         ('Traits détectés', '${_lab.detector.marks.length}', null),
         ('Volant', '${_lab.wheelRpm.toStringAsFixed(0)} tr/min', null),
       ]),
-      const SectionHeader(title: 'Diagnostic'),
-      Text(
-        'Coupez l\'un puis l\'autre et notez « Images analysées /s » à chaque fois.',
-        style: textTheme.bodySmall,
-      ),
-      const SizedBox(height: AppSpacing.sm),
-      SafitCard(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-        child: Column(
-          children: [
-            SwitchListTile(
-              title: const Text('Aperçu'),
-              subtitle: Text('Affichage de l\'image à l\'écran', style: textTheme.bodySmall),
-              value: _lab.previewEnabled,
-              onChanged: _lab.setPreviewEnabled,
-            ),
-            const Divider(indent: AppSpacing.lg, endIndent: AppSpacing.lg),
-            SwitchListTile(
-              title: const Text('Analyse'),
-              subtitle: Text(
-                'Mesure de la luminosité (coupée : on ne garde que l\'heure des images)',
-                style: textTheme.bodySmall,
-              ),
-              value: _lab.analysisEnabled,
-              onChanged: _lab.setAnalysisEnabled,
-            ),
-          ],
-        ),
-      ),
       const SectionHeader(title: 'Luminosité (2 dernières secondes)'),
       SafitCard(
         child: LumaChart(
@@ -251,19 +212,27 @@ class _CameraLabScreenState extends State<CameraLabScreen> {
       SafitButton(
         label: _lab.isRecording
             ? 'Arrêter l\'enregistrement (${_lab.recordedSamples} mesures)'
-            : 'Enregistrer les mesures (CSV)',
+            : 'Enregistrer vidéo + mesures',
         icon: _lab.isRecording ? Icons.stop_circle_outlined : Icons.fiber_manual_record,
         variant: SafitButtonVariant.secondary,
-        onPressed: _toggleRecording,
+        onPressed: _lab.stopping ? null : _toggleRecording,
       ),
-      if (_lab.lastSavedPath != null) ...[
-        const SizedBox(height: AppSpacing.sm),
-        Text('Dernier fichier : ${_lab.lastSavedPath}', style: textTheme.bodySmall),
-      ],
+      ..._savedFiles(textTheme),
       if (session.highSpeedOptions.isNotEmpty) ...[
         const SectionHeader(title: 'Modes haute vitesse du téléphone'),
         Text(session.highSpeedOptions.join('   '), style: textTheme.bodySmall),
       ],
+    ];
+  }
+
+  List<Widget> _savedFiles(TextTheme textTheme) {
+    if (_lab.lastSavedPaths.isEmpty) return const [];
+    return [
+      const SizedBox(height: AppSpacing.sm),
+      Text(
+        'Derniers fichiers :\n${_lab.lastSavedPaths.join('\n')}',
+        style: textTheme.bodySmall,
+      ),
     ];
   }
 }

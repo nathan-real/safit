@@ -10,7 +10,7 @@ import '../../../domain/signal_processing/mark_detector.dart';
 import '../../../services/camera/high_speed_channel.dart';
 
 /// Logique de l'écran « Prototype caméra » : reçoit les mesures, calcule les
-/// statistiques, détecte les traits et enregistre un CSV à la demande.
+/// statistiques, détecte les traits et enregistre vidéo + CSV à la demande.
 class CameraLabController extends ChangeNotifier {
   CameraLabController(this._camera);
 
@@ -23,40 +23,38 @@ class CameraLabController extends ChangeNotifier {
   String? error;
   bool starting = false;
 
+  /// Vrai pendant l'arrêt : la caméra est coupée, l'analyse finit les dernières images.
+  bool stopping = false;
+
   Rect roi = const Rect.fromLTWH(0.2, 0.4, 0.6, 0.15);
   bool exposureLocked = false;
   int markersPerTurn = 8;
 
-  /// Interrupteurs de diagnostic : couper l'un puis l'autre montre
-  /// ce qui empêche d'atteindre la fréquence demandée.
-  bool previewEnabled = true;
-  bool analysisEnabled = true;
-
-  /// Temps moyen de traitement d'une image côté natif (ms).
-  double? workMs;
-
   FrameStats stats = FrameStats(nominalFps: 240);
   final detector = MarkDetector();
   double sensorFps = 0;
-  double? lastLuma;
+  double videoFps = 0;
+
+  /// Retard de l'analyse sur la vidéo (ms) : proche de 0 = analyse en temps réel.
+  double analysisLagMs = 0;
 
   /// Dernières mesures, pour la courbe : (horodatage ns, luminosité).
   final chart = ListQueue<(int, double)>();
 
   StreamSubscription<SampleBatch>? _subscription;
-  final _sensorHistory = ListQueue<(int, int)>();
+  final _counterHistory = ListQueue<(int, int, int)>();
+  int _lastAnalyzedNs = 0;
 
   StringBuffer? _recording;
+  String? _recordingVideoPath;
   int recordedSamples = 0;
-  String? lastSavedPath;
+  List<String> lastSavedPaths = [];
 
   bool get isRunning => session != null;
   bool get isRecording => _recording != null;
 
-  int get lastTimestamp => chart.isEmpty ? 0 : chart.last.$1;
-
-  /// Traits par seconde, sur la dernière seconde.
-  int get marksPerSecond => detector.marksInLastSecond(lastTimestamp);
+  /// Traits par seconde, sur la dernière seconde analysée.
+  int get marksPerSecond => detector.marksInLastSecond(_lastAnalyzedNs);
 
   /// Vitesse du volant déduite des traits (tours/min).
   double get wheelRpm => marksPerSecond / markersPerTurn * 60;
@@ -72,10 +70,9 @@ class CameraLabController extends ChangeNotifier {
       stats = FrameStats(nominalFps: s.fps.toDouble());
       detector.reset();
       chart.clear();
-      _sensorHistory.clear();
+      _counterHistory.clear();
+      _lastAnalyzedNs = 0;
       if (exposureLocked) await _camera.setExposureLocked(true);
-      if (!previewEnabled) await _camera.setPreviewEnabled(false);
-      if (!analysisEnabled) await _camera.setAnalysisEnabled(false);
     } on PlatformException catch (e) {
       error = e.message ?? e.code;
       await _subscription?.cancel();
@@ -86,12 +83,22 @@ class CameraLabController extends ChangeNotifier {
     }
   }
 
+  /// Coupe la caméra, attend la fin de l'analyse, puis écrit le CSV si besoin.
   Future<void> stop() async {
-    if (isRecording) await stopRecording();
+    if (session == null || stopping) return;
+    stopping = true;
+    notifyListeners();
+    try {
+      await _camera.stop();
+    } on PlatformException catch (e) {
+      error = e.message ?? e.code;
+    }
+    // La vidéo a été terminée par l'arrêt ; il reste le CSV.
+    if (isRecording) await _saveCsv(_recordingVideoPath);
     await _subscription?.cancel();
     _subscription = null;
-    if (session != null) await _camera.stop();
     session = null;
+    stopping = false;
     notifyListeners();
   }
 
@@ -107,68 +114,56 @@ class CameraLabController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setPreviewEnabled(bool value) {
-    previewEnabled = value;
-    if (isRunning) _camera.setPreviewEnabled(value);
-    _noteSettingsChange();
-    notifyListeners();
-  }
-
-  void setAnalysisEnabled(bool value) {
-    analysisEnabled = value;
-    if (isRunning) _camera.setAnalysisEnabled(value);
-    _noteSettingsChange();
-    notifyListeners();
-  }
-
-  /// Garde une trace des changements de réglage dans le CSV en cours.
-  void _noteSettingsChange() {
-    _recording?.writeln('# ${lastTimestamp}ns apercu=$previewEnabled analyse=$analysisEnabled');
-  }
-
   void setMarkersPerTurn(int value) {
     markersPerTurn = value.clamp(1, 64);
     notifyListeners();
   }
 
-  void startRecording() {
+  /// Démarre l'enregistrement de la vidéo et du CSV des mesures.
+  Future<void> startRecording() async {
     final s = session;
-    if (s == null) return;
+    if (s == null || isRecording) return;
     final r = roi;
+    _recordingVideoPath = await _camera.startRecording();
     _recording = StringBuffer()
-      ..writeln('# SAFiT - prototype caméra')
+      ..writeln('# SAFiT - prototype caméra (vidéo + analyse de chaque image)')
       ..writeln('# date=${DateTime.now().toIso8601String()}')
       ..writeln('# camera=${s.cameraId} taille=${s.captureWidth}x${s.captureHeight} '
           'fps=${s.fps} haute_vitesse=${s.highSpeed}')
       ..writeln('# roi=${r.left.toStringAsFixed(3)},${r.top.toStringAsFixed(3)},'
           '${r.width.toStringAsFixed(3)},${r.height.toStringAsFixed(3)} '
           'marqueurs_par_tour=$markersPerTurn exposition_bloquee=$exposureLocked')
-      ..writeln('# apercu=$previewEnabled analyse=$analysisEnabled '
-          'lecture_sans_attente=${s.asyncReadback}')
+      ..writeln('# video=${_recordingVideoPath ?? '-'}')
       ..writeln('timestamp_ns,luminosite,trait');
     recordedSamples = 0;
     notifyListeners();
   }
 
-  /// Écrit le fichier et renvoie son chemin.
-  Future<String?> stopRecording() async {
+  /// Termine la vidéo et écrit le CSV ; renvoie les chemins des fichiers.
+  Future<List<String>> stopRecording() async {
+    if (!isRecording) return const [];
+    final video = await _camera.stopRecording();
+    return _saveCsv(video);
+  }
+
+  Future<List<String>> _saveCsv(String? videoPath) async {
     final buffer = _recording;
-    if (buffer == null) return null;
     _recording = null;
-    notifyListeners();
+    _recordingVideoPath = null;
+    if (buffer == null) return const [];
 
     final dir = await _camera.outputDirectory();
     if (dir == null) {
       error = 'Dossier de sortie introuvable';
       notifyListeners();
-      return null;
+      return const [];
     }
     final stamp = DateTime.now().toIso8601String().replaceAll(':', '-').split('.').first;
     final file = File('$dir/safit_camera_$stamp.csv');
     await file.writeAsString(buffer.toString());
-    lastSavedPath = file.path;
+    lastSavedPaths = [file.path, ?videoPath];
     notifyListeners();
-    return file.path;
+    return lastSavedPaths;
   }
 
   void _onBatch(SampleBatch batch) {
@@ -177,35 +172,36 @@ class CameraLabController extends ChangeNotifier {
       final t = batch.timestampsNs[i];
       final y = batch.luma[i];
       stats.add(t);
-      if (y < 0) {
-        // Analyse coupée : seule l'heure de l'image compte.
-        recording?.writeln('$t,,');
-        continue;
-      }
       final mark = detector.add(t, y);
       chart.add((t, y));
       recording?.writeln('$t,${y.toStringAsFixed(4)},${mark ? 1 : 0}');
+      _lastAnalyzedNs = t;
     }
     if (recording != null) recordedSamples += batch.timestampsNs.length;
     while (chart.isNotEmpty && chart.last.$1 - chart.first.$1 > chartWindowNs) {
       chart.removeFirst();
     }
-    if (batch.luma.isNotEmpty && batch.luma.last >= 0) lastLuma = batch.luma.last;
-    if (batch.workUs >= 0) workMs = batch.workUs / 1000;
-    _updateSensorFps(batch.sensorFrames);
+    if (batch.lastEncodedNs > 0 && _lastAnalyzedNs > 0) {
+      analysisLagMs = (batch.lastEncodedNs - _lastAnalyzedNs) / 1e6;
+    }
+    _updateCounters(batch.sensorFrames, batch.encodedFrames);
     notifyListeners();
   }
 
-  /// Images sorties du capteur par seconde (horloge du téléphone).
-  void _updateSensorFps(int sensorFrames) {
+  /// Images capteur et images vidéo par seconde (horloge du téléphone).
+  void _updateCounters(int sensorFrames, int encodedFrames) {
+    if (sensorFrames < 0 || encodedFrames < 0) return;
     final now = DateTime.now().microsecondsSinceEpoch;
-    _sensorHistory.add((now, sensorFrames));
-    while (now - _sensorHistory.first.$1 > 1000000) {
-      _sensorHistory.removeFirst();
+    _counterHistory.add((now, sensorFrames, encodedFrames));
+    while (now - _counterHistory.first.$1 > 1000000) {
+      _counterHistory.removeFirst();
     }
-    final first = _sensorHistory.first;
-    final elapsed = now - first.$1;
-    if (elapsed > 0) sensorFps = (sensorFrames - first.$2) * 1e6 / elapsed;
+    final (t0, sensor0, encoded0) = _counterHistory.first;
+    final elapsed = now - t0;
+    if (elapsed > 0) {
+      sensorFps = (sensorFrames - sensor0) * 1e6 / elapsed;
+      videoFps = (encodedFrames - encoded0) * 1e6 / elapsed;
+    }
   }
 
   void _onStreamError(Object e) {

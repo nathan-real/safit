@@ -20,9 +20,11 @@ import android.view.Surface
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Pilote la caméra arrière : session « haute vitesse » (240 fps) si le
- * téléphone la propose à une app tierce, sinon session normale (≈30 fps),
- * pour pouvoir quand même tester la chaîne complète (émulateur, vieux téléphones).
+ * Pilote la caméra arrière, avec deux sorties (vidéo + aperçu) : session
+ * « haute vitesse » (240 fps) si le téléphone la propose à une app tierce,
+ * sinon session normale (≈30 fps), pour pouvoir quand même tester la chaîne
+ * complète (émulateur, vieux téléphones). En haute vitesse, Android n'envoie
+ * à l'aperçu qu'une image sur 8 (~30 i/s) ; la vidéo reçoit toutes les images.
  *
  * Tous les réglages sont regroupés dans [buildRequest] : ils sont réappliqués
  * à chaque (re)lancement de la capture.
@@ -45,7 +47,7 @@ class HighSpeedCamera(context: Context) {
 
     private var device: CameraDevice? = null
     private var session: CameraCaptureSession? = null
-    private var target: Surface? = null
+    private var targets: List<Surface> = emptyList()
     private var config: Config? = null
     private var exposureLocked = false
 
@@ -115,13 +117,13 @@ class HighSpeedCamera(context: Context) {
     }
 
     @SuppressLint("MissingPermission")
-    fun open(config: Config, surface: Surface, onReady: () -> Unit, onError: (String) -> Unit) {
+    fun open(config: Config, surfaces: List<Surface>, onReady: () -> Unit, onError: (String) -> Unit) {
         this.config = config
-        target = surface
+        targets = surfaces
         manager.openCamera(config.cameraId, object : CameraDevice.StateCallback() {
             override fun onOpened(camera: CameraDevice) {
                 device = camera
-                createSession(camera, surface, onReady, onError)
+                createSession(camera, surfaces, onReady, onError)
             }
 
             override fun onDisconnected(camera: CameraDevice) {
@@ -140,7 +142,7 @@ class HighSpeedCamera(context: Context) {
     @Suppress("DEPRECATION")
     private fun createSession(
         camera: CameraDevice,
-        surface: Surface,
+        surfaces: List<Surface>,
         onReady: () -> Unit,
         onError: (String) -> Unit,
     ) {
@@ -160,9 +162,9 @@ class HighSpeedCamera(context: Context) {
             }
         }
         if (config!!.highSpeed) {
-            camera.createConstrainedHighSpeedCaptureSession(listOf(surface), callback, handler)
+            camera.createConstrainedHighSpeedCaptureSession(surfaces, callback, handler)
         } else {
-            camera.createCaptureSession(listOf(surface), callback, handler)
+            camera.createCaptureSession(surfaces, callback, handler)
         }
     }
 
@@ -174,9 +176,9 @@ class HighSpeedCamera(context: Context) {
     private fun buildRequest(): CaptureRequest {
         val camera = device!!
         val cfg = config!!
-        val template = if (cfg.highSpeed) CameraDevice.TEMPLATE_RECORD else CameraDevice.TEMPLATE_PREVIEW
+        val template = CameraDevice.TEMPLATE_RECORD
         return camera.createCaptureRequest(template).apply {
-            addTarget(target!!)
+            targets.forEach { addTarget(it) }
             set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(cfg.fps, cfg.fps))
             set(CaptureRequest.CONTROL_AE_LOCK, exposureLocked)
             set(CaptureRequest.CONTROL_AWB_LOCK, exposureLocked)
