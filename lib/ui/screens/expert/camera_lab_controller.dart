@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -53,11 +54,32 @@ class CameraLabController extends ChangeNotifier {
   bool get isRunning => session != null;
   bool get isRecording => _recording != null;
 
-  /// Traits par seconde, sur la dernière seconde analysée.
-  int get marksPerSecond => detector.marksInLastSecond(_lastAnalyzedNs);
+  /// Nombre d'intervalles entre traits utilisés pour les moyennes affichées.
+  static const intervalWindow = 8;
 
-  /// Vitesse du volant déduite des traits (tours/min).
-  double get wheelRpm => marksPerSecond / markersPerTurn * 60;
+  /// Intervalle moyen entre deux traits (ms), sur les derniers traits.
+  double? get meanIntervalMs {
+    final intervals = detector.recentIntervals(intervalWindow);
+    if (intervals.isEmpty) return null;
+    return intervals.reduce((a, b) => a + b) / intervals.length / 1e6;
+  }
+
+  /// Écart-type des intervalles (ms) : mesure la régularité, donc la précision.
+  double? get intervalSpreadMs {
+    final intervals = detector.recentIntervals(intervalWindow);
+    if (intervals.length < 2) return null;
+    final mean = intervals.reduce((a, b) => a + b) / intervals.length;
+    final variance = intervals.map((i) => (i - mean) * (i - mean)).reduce((a, b) => a + b) /
+        (intervals.length - 1);
+    return sqrt(variance) / 1e6;
+  }
+
+  /// Vitesse du volant (tours/min), d'après l'intervalle moyen entre traits.
+  double? get wheelRpm {
+    final interval = meanIntervalMs;
+    if (interval == null || interval <= 0) return null;
+    return 60000 / (interval * markersPerTurn);
+  }
 
   Future<void> start() async {
     starting = true;
@@ -134,7 +156,8 @@ class CameraLabController extends ChangeNotifier {
           '${r.width.toStringAsFixed(3)},${r.height.toStringAsFixed(3)} '
           'marqueurs_par_tour=$markersPerTurn exposition_bloquee=$exposureLocked')
       ..writeln('# video=${_recordingVideoPath ?? '-'}')
-      ..writeln('timestamp_ns,luminosite,trait');
+      ..writeln('# instant_trait_ns : instant du passage sous le seuil, interpolé entre deux images')
+      ..writeln('timestamp_ns,luminosite,trait,instant_trait_ns');
     recordedSamples = 0;
     notifyListeners();
   }
@@ -174,7 +197,9 @@ class CameraLabController extends ChangeNotifier {
       stats.add(t);
       final mark = detector.add(t, y);
       chart.add((t, y));
-      recording?.writeln('$t,${y.toStringAsFixed(4)},${mark ? 1 : 0}');
+      recording?.writeln(
+        mark ? '$t,${y.toStringAsFixed(4)},1,${detector.marks.last}' : '$t,${y.toStringAsFixed(4)},0,',
+      );
       _lastAnalyzedNs = t;
     }
     if (recording != null) recordedSamples += batch.timestampsNs.length;

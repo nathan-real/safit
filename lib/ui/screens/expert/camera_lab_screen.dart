@@ -157,8 +157,15 @@ class _CameraLabScreenState extends State<CameraLabScreen> {
         ('Images perdues', '${stats.droppedFrames}', stats.droppedFrames == 0 ? null : AppColors.warning),
         ('Plus grand trou', '${stats.maxGapMs.toStringAsFixed(1)} ms', null),
         ('Traits détectés', '${_lab.detector.marks.length}', null),
-        ('Volant', '${_lab.wheelRpm.toStringAsFixed(0)} tr/min', null),
+        ('Volant', _fmt(_lab.wheelRpm, 0, 'tr/min'), null),
+        ('Intervalle entre traits', _fmt(_lab.meanIntervalMs, 1, 'ms'), null),
+        ('Variation (écart-type)', _fmt(_lab.intervalSpreadMs, 1, 'ms'), null),
       ]),
+      Text(
+        'Moyennes sur les ${CameraLabController.intervalWindow} derniers intervalles. '
+        'À vitesse constante, une petite variation = une mesure précise.',
+        style: textTheme.bodySmall,
+      ),
       const SectionHeader(title: 'Luminosité (2 dernières secondes)'),
       SafitCard(
         child: LumaChart(
@@ -224,6 +231,9 @@ class _CameraLabScreenState extends State<CameraLabScreen> {
       ],
     ];
   }
+
+  static String _fmt(double? value, int decimals, String unit) =>
+      value == null ? '--' : '${value.toStringAsFixed(decimals)} $unit';
 
   List<Widget> _savedFiles(TextTheme textTheme) {
     if (_lab.lastSavedPaths.isEmpty) return const [];
