@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
+import android.view.Surface
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
@@ -14,8 +15,6 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.math.max
-import kotlin.math.roundToInt
 
 /**
  * Pont avec Flutter.
@@ -35,8 +34,8 @@ class HighSpeedCameraPlugin(private val activity: Activity, engine: FlutterEngin
 
     private var camera: HighSpeedCamera? = null
     private var pipeline: VideoPipeline? = null
-    private var preview: PreviewRenderer? = null
-    private var producer: TextureRegistry.SurfaceProducer? = null
+    private var previewTexture: TextureRegistry.SurfaceTextureEntry? = null
+    private var previewSurface: Surface? = null
     private var pendingStart: Pair<MethodCall, MethodChannel.Result>? = null
 
     // Échantillons en attente d'envoi (écrits par le thread décodeur, lus par le thread principal).
@@ -140,39 +139,30 @@ class HighSpeedCameraPlugin(private val activity: Activity, engine: FlutterEngin
                 video.setRoi(it[0].toFloat(), it[1].toFloat(), it[2].toFloat(), it[3].toFloat())
             }
 
-            // L'aperçu est affiché en portrait : on échange largeur et hauteur si le
-            // capteur est tourné, et on le réduit (côté long = 640 px).
+            // Aperçu : la caméra écrit directement dans une texture Flutter (méthode
+            // de Nathan, PFE-13). Android redresse lui-même l'image selon l'orientation
+            // du capteur ; on ne la tourne pas nous-mêmes. Affichée en portrait.
             val rotated = config.sensorOrientation % 180 != 0
-            val portraitW = if (rotated) h else w
-            val portraitH = if (rotated) w else h
-            val scale = PREVIEW_LONG_SIDE.toFloat() / max(portraitW, portraitH)
-            val previewW = (portraitW * scale).roundToInt()
-            val previewH = (portraitH * scale).roundToInt()
-
-            val renderer = PreviewRenderer(w, h, config.sensorOrientation)
-            renderer.start()
-            val prod = textures.createSurfaceProducer()
-            prod.setSize(previewW, previewH)
-            prod.setCallback(object : TextureRegistry.SurfaceProducer.Callback {
-                override fun onSurfaceAvailable() = renderer.setOutput(prod.surface, previewW, previewH)
-                override fun onSurfaceCleanup() = renderer.setOutput(null, 0, 0)
-            })
-            renderer.setOutput(prod.surface, previewW, previewH)
+            val previewW = if (rotated) h else w
+            val previewH = if (rotated) w else h
+            val entry = textures.createSurfaceTexture()
+            entry.surfaceTexture().setDefaultBufferSize(w, h)
+            val surface = Surface(entry.surfaceTexture())
 
             camera = cam
             pipeline = video
-            preview = renderer
-            producer = prod
+            previewTexture = entry
+            previewSurface = surface
             synchronized(lock) { count = 0 }
 
-            cam.open(config, listOf(video.inputSurface, renderer.inputSurface), onReady = {
+            cam.open(config, listOf(video.inputSurface, surface), onReady = {
                 mainHandler.post {
                     mainHandler.post(flushTask)
                     if (!answered) {
                         answered = true
                         result.success(
                             mapOf(
-                                "textureId" to prod.id(),
+                                "textureId" to entry.id(),
                                 "previewWidth" to previewW,
                                 "previewHeight" to previewH,
                                 "captureWidth" to w,
@@ -224,10 +214,10 @@ class HighSpeedCameraPlugin(private val activity: Activity, engine: FlutterEngin
     }
 
     private fun releasePreview() {
-        preview?.release()
-        preview = null
-        producer?.release()
-        producer = null
+        previewSurface?.release()
+        previewSurface = null
+        previewTexture?.release()
+        previewTexture = null
     }
 
     private fun addSample(timestampNs: Long, luma: Float) {
@@ -272,7 +262,6 @@ class HighSpeedCameraPlugin(private val activity: Activity, engine: FlutterEngin
     companion object {
         private const val PERMISSION_REQUEST = 4201
         private const val FLUSH_INTERVAL_MS = 50L
-        private const val PREVIEW_LONG_SIDE = 640
 
         /** Temps laissé au décodeur pour finir l'analyse après l'arrêt. */
         private const val FINISH_TIMEOUT_MS = 30_000L
