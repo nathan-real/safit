@@ -19,8 +19,8 @@ import '../../widgets/safit_logo.dart';
 import '../../widgets/safit_page.dart';
 import '../../widgets/section_header.dart';
 import '../../widgets/status_tile.dart';
+import '../expert/camera_lab_screen.dart';
 import '../sensors/heart_rate_screen.dart';
-import '../settings/settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -150,18 +150,19 @@ class _CameraTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (status, level) = switch (state.status) {
+      CameraStatus.ready when !state.highSpeed =>
+        ('Prête · ${state.fps?.round() ?? '--'} fps seulement', StatusLevel.pending),
       CameraStatus.ready => ('Prête · ${state.fps?.round() ?? '--'} fps', StatusLevel.ready),
       CameraStatus.checking => ('Vérification…', StatusLevel.pending),
-      CameraStatus.error => ('Erreur', StatusLevel.off),
-      CameraStatus.notConfigured => ('Non configurée', StatusLevel.off),
+      CameraStatus.error => ('Indisponible', StatusLevel.off),
+      CameraStatus.notConfigured => ('Zone non réglée', StatusLevel.off),
     };
     return StatusTile(
       icon: Icons.photo_camera_outlined,
       label: 'Caméra',
       status: status,
       level: level,
-      // Ouvrira l'écran caméra dédié quand il existera.
-      onTap: () => SettingsScreen.open(context),
+      onTap: () => CameraLabScreen.open(context),
     );
   }
 }

@@ -36,7 +36,7 @@ void main() {
     expect(find.text('Préparation'), findsOneWidget);
 
     await tapContinue(tester);
-    expect(find.text('Marqueurs détectés'), findsOneWidget);
+    expect(find.text('Traits détectés'), findsOneWidget);
 
     await tapContinue(tester);
     expect(find.text('Fréquence cardiaque en direct'), findsOneWidget);

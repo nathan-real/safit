@@ -79,7 +79,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Caméra'));
     await tester.pumpAndSettle();
-    expect(find.text('Mode expert'), findsOneWidget);
+    expect(find.text('Réglage caméra'), findsOneWidget);
   });
 
   testWidgets('Un test récent annonce l\'écran de détail à venir', (tester) async {

@@ -29,7 +29,12 @@ class SettingsScreen extends StatelessWidget {
         header: const SafitHeader(title: 'Réglages', showSettings: false),
         children: [
           _SettingsGroup(title: 'Capteurs', tiles: [
-            _SettingsTile(Icons.photo_camera_outlined, 'Caméra', onTap: soon),
+            _SettingsTile(
+              Icons.photo_camera_outlined,
+              'Caméra',
+              subtitle: 'Zone de détection, test 240 fps',
+              onTap: () => CameraLabScreen.open(context),
+            ),
             _SettingsTile(
               Icons.favorite_border,
               'Polar H10',
@@ -50,12 +55,6 @@ class SettingsScreen extends StatelessWidget {
               'Mode expert',
               subtitle: 'Zone de détection, calibration, diagnostic',
               onTap: soon,
-            ),
-            _SettingsTile(
-              Icons.speed,
-              'Prototype caméra 240 fps',
-              subtitle: 'Test de l\'analyse en direct',
-              onTap: () => CameraLabScreen.open(context),
             ),
           ]),
         ],

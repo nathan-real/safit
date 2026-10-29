@@ -22,6 +22,9 @@ class MockCameraService implements CameraService {
   ValueListenable<CameraState> get state => _state;
 
   @override
+  Future<void> refresh() async {}
+
+  @override
   Future<void> runDetectionCheck() async {
     _state.value = const CameraState(status: CameraStatus.checking);
     await Future<void>.delayed(const Duration(milliseconds: 1500));

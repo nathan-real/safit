@@ -124,9 +124,24 @@ class CameraLabController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Reprend la zone de détection mémorisée sur le téléphone, s'il y en a une.
+  Future<void> loadSavedRoi() async {
+    try {
+      final saved = await _camera.loadRoi();
+      if (saved != null) {
+        roi = saved;
+        notifyListeners();
+      }
+    } on MissingPluginException {
+      // Pas de caméra native (tests, autre plateforme) : on garde la zone par défaut.
+    }
+  }
+
+  /// Déplace la zone de détection et la mémorise : elle servira à chaque test.
   void setRoi(Rect value) {
     roi = value;
     if (isRunning) _camera.setRoi(value);
+    _camera.saveRoi(value);
     notifyListeners();
   }
 

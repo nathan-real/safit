@@ -19,7 +19,8 @@ import java.util.Locale
 /**
  * Pont avec Flutter.
  *
- * - `safit/highspeed` (méthodes) : start, stop, setRoi, setExposureLocked,
+ * - `safit/highspeed` (méthodes) : start, stop, setRoi, setExposureLocked, describe,
+ *   loadRoi, saveRoi (zone de détection mémorisée sur le téléphone),
  *   startRecording, stopRecording, outputDirectory.
  * - `safit/highspeed/samples` (flux) : toutes les ~50 ms, un lot
  *   `{t: horodatages ns, y: luminosités 0..1, sensorFrames: images sorties du capteur,
@@ -98,7 +99,43 @@ class HighSpeedCameraPlugin(private val activity: Activity, engine: FlutterEngin
                 }
             }
             "outputDirectory" -> result.success(activity.getExternalFilesDir(null)?.absolutePath)
+            "describe" -> describe(result)
+            "loadRoi" -> {
+                val prefs = activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE)
+                result.success(
+                    prefs.getString(KEY_ROI, null)?.split(',')?.mapNotNull { it.toDoubleOrNull() }
+                        ?.takeIf { it.size == 4 },
+                )
+            }
+            "saveRoi" -> {
+                val r = call.arguments<List<Double>>()!!
+                activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE).edit()
+                    .putString(KEY_ROI, r.joinToString(","))
+                    .apply()
+                result.success(null)
+            }
             else -> result.notImplemented()
+        }
+    }
+
+    /** Ce que la caméra permet, sans l'allumer (pas besoin de permission). */
+    private fun describe(result: MethodChannel.Result) {
+        val cam = HighSpeedCamera(activity)
+        try {
+            val config = cam.selectConfig()
+            result.success(
+                mapOf(
+                    "available" to true,
+                    "highSpeed" to config.highSpeed,
+                    "fps" to config.fps,
+                    "captureWidth" to config.size.width,
+                    "captureHeight" to config.size.height,
+                ),
+            )
+        } catch (e: Exception) {
+            result.success(mapOf("available" to false, "error" to (e.message ?: e.toString())))
+        } finally {
+            cam.close()
         }
     }
 
@@ -261,6 +298,8 @@ class HighSpeedCameraPlugin(private val activity: Activity, engine: FlutterEngin
 
     companion object {
         private const val PERMISSION_REQUEST = 4201
+        private const val PREFS = "safit_camera"
+        private const val KEY_ROI = "roi"
         private const val FLUSH_INTERVAL_MS = 50L
 
         /** Temps laissé au décodeur pour finir l'analyse après l'arrêt. */

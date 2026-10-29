@@ -1,9 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/widgets.dart';
 
 import 'ble/heart_rate_service.dart';
 import 'ble/mock_heart_rate_service.dart';
 import 'camera/camera_service.dart';
 import 'camera/mock_camera_service.dart';
+import 'camera/real_camera_service.dart';
 import 'storage/mock_profile_service.dart';
 import 'storage/mock_results_service.dart';
 import 'storage/profile_service.dart';
@@ -27,6 +30,18 @@ class ServiceRegistry {
     return ServiceRegistry(
       heartRate: MockHeartRateService(live: live),
       camera: MockCameraService(),
+      testData: MockTestService(),
+      results: MockResultsService(),
+      profile: MockProfileService(),
+    );
+  }
+
+  /// Ce qu'utilise l'app : la vraie caméra sur Android, le reste encore simulé
+  /// (la vraie ceinture Polar et le stockage arriveront ici).
+  factory ServiceRegistry.forDevice() {
+    return ServiceRegistry(
+      heartRate: MockHeartRateService(),
+      camera: Platform.isAndroid ? RealCameraService() : MockCameraService(),
       testData: MockTestService(),
       results: MockResultsService(),
       profile: MockProfileService(),

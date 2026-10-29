@@ -35,6 +35,23 @@ class HighSpeedSession {
   final List<String> highSpeedOptions;
 }
 
+/// Ce que la caméra du téléphone permet, sans l'allumer.
+class CameraDescription {
+  CameraDescription.fromMap(Map<Object?, Object?> m)
+      : available = m['available'] as bool,
+        highSpeed = m['highSpeed'] as bool? ?? false,
+        fps = m['fps'] as int? ?? 0,
+        error = m['error'] as String?;
+
+  /// Faux s'il n'y a pas de caméra arrière utilisable.
+  final bool available;
+
+  /// Vrai si le mode haute vitesse (≈240 fps) est accessible à l'app.
+  final bool highSpeed;
+  final int fps;
+  final String? error;
+}
+
 /// Lot de mesures envoyé environ toutes les 50 ms.
 class SampleBatch {
   SampleBatch.fromMap(Map<Object?, Object?> m)
@@ -96,6 +113,19 @@ class HighSpeedCameraChannel {
   /// Dossier où enregistrer les fichiers de mesures, accessible en USB
   /// (Android/data/fr.ensc.safit/files).
   Future<String?> outputDirectory() => _methods.invokeMethod<String>('outputDirectory');
+
+  Future<CameraDescription> describe() async {
+    final result = await _methods.invokeMapMethod<Object?, Object?>('describe');
+    return CameraDescription.fromMap(result!);
+  }
+
+  /// Zone de détection mémorisée sur le téléphone, ou null si jamais réglée.
+  Future<Rect?> loadRoi() async {
+    final r = await _methods.invokeListMethod<double>('loadRoi');
+    return r == null ? null : Rect.fromLTWH(r[0], r[1], r[2], r[3]);
+  }
+
+  Future<void> saveRoi(Rect roi) => _methods.invokeMethod('saveRoi', _roiArgs(roi));
 
   static List<double> _roiArgs(Rect r) => [r.left, r.top, r.width, r.height];
 }

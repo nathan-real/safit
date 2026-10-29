@@ -21,6 +21,6 @@ void main() {
     ),
   );
 
-  // Pour passer aux vrais capteurs, c'est ici qu'on changera de registre.
-  runApp(SafitApp(services: ServiceRegistry.mock()));
+  // Choix des services réels ou simulés : voir ServiceRegistry.forDevice.
+  runApp(SafitApp(services: ServiceRegistry.forDevice()));
 }

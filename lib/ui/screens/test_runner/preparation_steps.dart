@@ -12,7 +12,7 @@ import '../../widgets/protocol_icon.dart';
 import '../../widgets/safit_button.dart';
 import '../../widgets/safit_card.dart';
 import '../../widgets/section_header.dart';
-import '../settings/settings_screen.dart';
+import '../expert/camera_lab_screen.dart';
 
 // Contenu des étapes du parcours de préparation (voir PreparationFlow).
 
@@ -95,6 +95,12 @@ class SetupStep extends StatelessWidget {
 class CameraCheckStep extends StatelessWidget {
   const CameraCheckStep({super.key});
 
+  Future<void> _openCameraSettings(BuildContext context) async {
+    final camera = AppServices.of(context).camera;
+    await CameraLabScreen.open(context);
+    await camera.refresh();
+  }
+
   @override
   Widget build(BuildContext context) {
     final camera = AppServices.of(context).camera;
@@ -103,6 +109,11 @@ class CameraCheckStep extends StatelessWidget {
       valueListenable: camera.state,
       builder: (context, state, _) {
         final checking = state.status == CameraStatus.checking;
+        // La caméra a fonctionné si elle est prête, ou si une vérification a pu
+        // filmer (même sans trouver de trait : c'est alors la détection qui échoue).
+        final usable = state.status == CameraStatus.ready ||
+            state.status == CameraStatus.checking ||
+            state.markersDetected != null;
         CheckState check(bool ok) =>
             checking ? CheckState.pending : (ok ? CheckState.ok : CheckState.missing);
 
@@ -110,7 +121,8 @@ class CameraCheckStep extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Faites tourner le volant à la main : la caméra doit voir passer les traits.',
+              'Lancez le test, puis faites tourner le volant à la main : '
+              'la caméra doit voir passer les traits.',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: AppSpacing.lg),
@@ -119,11 +131,11 @@ class CameraCheckStep extends StatelessWidget {
                 children: [
                   CheckRow(
                     label: 'Caméra',
-                    state: check(state.isReady),
+                    state: check(usable),
                     detail: state.fps == null ? null : '${state.fps!.round()} fps',
                   ),
                   CheckRow(
-                    label: 'Marqueurs détectés',
+                    label: 'Traits détectés',
                     state: check((state.markersDetected ?? 0) > 0),
                     detail: state.markersDetected?.toString(),
                   ),
@@ -140,15 +152,31 @@ class CameraCheckStep extends StatelessWidget {
               label: checking ? 'Vérification…' : 'Tester la détection',
               icon: Icons.center_focus_strong_outlined,
               variant: SafitButtonVariant.secondary,
-              onPressed: checking ? null : camera.runDetectionCheck,
+              onPressed: checking || state.status == CameraStatus.notConfigured
+                  ? null
+                  : camera.runDetectionCheck,
             ),
+            if (!state.highSpeed) ...[
+              const SizedBox(height: AppSpacing.lg),
+              const _Notice(
+                text: 'Ce téléphone ne permet pas le mode 240 images/s : '
+                    'les mesures seront moins précises.',
+              ),
+            ],
             if (state.status == CameraStatus.notConfigured) ...[
               const SizedBox(height: AppSpacing.lg),
               _Notice(
                 text: 'La zone de détection n\'est pas encore réglée. '
-                    'Demandez à l\'expérimentateur de la régler dans le mode expert.',
-                actionLabel: 'Ouvrir les réglages',
-                onAction: () => SettingsScreen.open(context),
+                    'Demandez à l\'expérimentateur de la régler.',
+                actionLabel: 'Régler la caméra',
+                onAction: () => _openCameraSettings(context),
+              ),
+            ] else if (state.status == CameraStatus.error && state.message != null) ...[
+              const SizedBox(height: AppSpacing.lg),
+              _Notice(
+                text: state.message!,
+                actionLabel: 'Régler la caméra',
+                onAction: () => _openCameraSettings(context),
               ),
             ],
           ],

@@ -12,10 +12,10 @@ import 'camera_lab_controller.dart';
 import 'luma_chart.dart';
 import 'roi_overlay.dart';
 
-/// Écran de test de la caméra haute fréquence (mode expert).
+/// Réglage de la caméra (expérimentateur) : on place la zone de détection,
+/// mémorisée pour tous les tests, et on vérifie la mesure.
 /// La vidéo est encodée à ~240 fps ; chaque image est décodée et analysée
-/// (luminosité de la zone de détection). On vérifie ici que la vidéo tient
-/// la cadence et que l'analyse suit, et on enregistre vidéo + CSV.
+/// (luminosité de la zone de détection). On peut aussi enregistrer vidéo + CSV.
 class CameraLabScreen extends StatefulWidget {
   const CameraLabScreen({super.key});
 
@@ -31,6 +31,12 @@ class CameraLabScreen extends StatefulWidget {
 
 class _CameraLabScreenState extends State<CameraLabScreen> {
   final _lab = CameraLabController(HighSpeedCameraChannel());
+
+  @override
+  void initState() {
+    super.initState();
+    _lab.loadSavedRoi();
+  }
 
   @override
   void dispose() {
@@ -59,7 +65,7 @@ class _CameraLabScreenState extends State<CameraLabScreen> {
         builder: (context, _) {
           final session = _lab.session;
           return SafitPage(
-            header: const SafitHeader(title: 'Prototype caméra', showSettings: false),
+            header: const SafitHeader(title: 'Réglage caméra', showSettings: false),
             bottom: session == null
                 ? SafitButton(
                     label: _lab.starting ? 'Ouverture…' : 'Démarrer la caméra',
