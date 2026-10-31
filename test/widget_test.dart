@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:safit/app.dart';
 import 'package:safit/models/test_protocol.dart';
+import 'package:safit/models/test_result.dart';
 import 'package:safit/services/app_services.dart';
 
 void main() {
@@ -82,12 +83,27 @@ void main() {
     expect(find.text('Réglage caméra'), findsOneWidget);
   });
 
-  testWidgets('Un test récent annonce l\'écran de détail à venir', (tester) async {
+  testWidgets('Un test enregistré apparaît aussitôt dans « Tests récents »', (tester) async {
+    await tester.pumpWidget(SafitApp(services: services));
+    await tester.pumpAndSettle();
+
+    await services.results.save(TestResult(
+      id: 'nouveau',
+      protocol: TestProtocol.forceVelocity,
+      date: DateTime.now(),
+      duration: const Duration(seconds: 7),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Test force-vitesse'), findsOneWidget);
+  });
+
+  testWidgets('Un test récent ouvre son bilan', (tester) async {
     await tester.pumpWidget(SafitApp(services: services));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Test incrémental'));
-    await tester.pump();
-    expect(find.text('Bientôt disponible'), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.text('Bilan'), findsOneWidget);
+    expect(find.text('Puissance moyenne'), findsOneWidget);
   });
 }

@@ -95,7 +95,22 @@ class MockTestService implements TestDataService {
       TestProtocol.frictionCalibration => _steadyTick(s, elapsed, 90, const Duration(seconds: 5)),
       TestProtocol.forceVelocity => _sprintTick(s, elapsed),
     };
-    _session.value = next.copyWith(heartRateBpm: _heartRate(elapsed));
+    final heartRate = _heartRate(elapsed);
+    _session.value = next.copyWith(
+      heartRateBpm: heartRate,
+      samples: next.phase == TestPhase.running
+          ? [
+              ...next.samples,
+              TestSample(
+                elapsed: elapsed,
+                cadenceRpm: next.cadenceRpm,
+                heartRateBpm: heartRate,
+                stageIndex: next.stageIndex,
+                targetCadenceRpm: next.targetCadenceRpm,
+              ),
+            ]
+          : null,
+    );
   }
 
   /// Le volant ralentit à vitesse constante (avec un peu de bruit de mesure).

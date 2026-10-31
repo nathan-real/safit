@@ -6,14 +6,19 @@ import 'package:flutter/services.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../domain/results/test_summary.dart';
+import '../../../models/ergocycle_parameters.dart';
 import '../../../models/test_protocol.dart';
+import '../../../models/test_result.dart';
 import '../../../models/test_session.dart';
 import '../../../services/app_services.dart';
+import '../../../services/storage/results_service.dart';
 import '../../../services/test/test_data_service.dart';
 import '../../widgets/safit_button.dart';
 import '../../widgets/safit_card.dart';
 import '../../widgets/safit_header.dart';
 import '../../widgets/safit_page.dart';
+import '../results/test_result_screen.dart';
 import 'deceleration_view.dart';
 
 /// Écran du test en direct : attente des premiers coups de pédale, puis
@@ -38,13 +43,19 @@ class LiveTestScreen extends StatefulWidget {
 
 class _LiveTestScreenState extends State<LiveTestScreen> {
   late TestDataService _test;
+  late ResultsService _results;
   int? _lastStage;
   TestPhase? _lastPhase;
+
+  /// Résultat du test, calculé et enregistré dès la fin de la mesure.
+  TestResult? _result;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _test = AppServices.of(context).testData;
+    final services = AppServices.of(context);
+    _test = services.testData;
+    _results = services.results;
   }
 
   @override
@@ -75,8 +86,22 @@ class _LiveTestScreenState extends State<LiveTestScreen> {
       SystemSound.play(SystemSoundType.alert);
       HapticFeedback.heavyImpact();
     }
+    if (s.phase == TestPhase.finished && _result == null) _saveResult(s);
     _lastStage = s.stageIndex;
     _lastPhase = s.phase;
+  }
+
+  /// Calcule le bilan du test et l'ajoute à l'historique.
+  void _saveResult(TestSession session) {
+    final now = DateTime.now();
+    final result = summarizeTest(
+      session,
+      ErgocycleParameters.provisionalDefaults,
+      id: now.microsecondsSinceEpoch.toString(),
+      date: now,
+    );
+    _results.save(result);
+    setState(() => _result = result);
   }
 
   Future<void> _confirmStop() async {
@@ -143,7 +168,14 @@ class _LiveTestScreenState extends State<LiveTestScreen> {
                     onPressed: _confirmStop,
                   ),
                 TestPhase.deceleration => null,
-                TestPhase.finished || TestPhase.aborted => SafitButton(
+                TestPhase.finished => SafitButton(
+                    label: 'Voir les résultats',
+                    icon: Icons.insights_outlined,
+                    onPressed: _result == null
+                        ? null
+                        : () => TestResultScreen.replace(context, _result!),
+                  ),
+                TestPhase.aborted => SafitButton(
                     label: 'Terminer',
                     onPressed: () => Navigator.of(context).pop(),
                   ),

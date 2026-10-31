@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../../models/test_protocol.dart';
 import '../../models/test_result.dart';
 import 'results_service.dart';
@@ -9,6 +11,11 @@ class MockResultsService implements ResultsService {
   }
 
   final List<TestResult> _results = [];
+  /// Incrémenté à chaque enregistrement : les écrans l'écoutent pour se rafraîchir.
+  final _revision = ValueNotifier(0);
+
+  @override
+  Listenable get changes => _revision;
 
   @override
   Future<List<TestResult>> listResults() async {
@@ -24,7 +31,10 @@ class MockResultsService implements ResultsService {
   }
 
   @override
-  Future<void> save(TestResult result) async => _results.add(result);
+  Future<void> save(TestResult result) async {
+    _results.add(result);
+    _revision.value++;
+  }
 
   static List<TestResult> _sampleData() {
     final now = DateTime.now();

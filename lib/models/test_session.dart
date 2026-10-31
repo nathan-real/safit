@@ -11,6 +11,25 @@ enum TestPhase {
   aborted,
 }
 
+/// Une mesure enregistrée pendant l'effort (avant la décélération).
+class TestSample {
+  const TestSample({
+    required this.elapsed,
+    this.cadenceRpm,
+    this.heartRateBpm,
+    this.stageIndex,
+    this.targetCadenceRpm,
+  });
+
+  final Duration elapsed;
+  final double? cadenceRpm;
+  final int? heartRateBpm;
+
+  /// Palier en cours et sa cadence cible (test incrémental).
+  final int? stageIndex;
+  final double? targetCadenceRpm;
+}
+
 /// Instantané d'un test en cours, mis à jour en continu par le service.
 ///
 /// Pas de puissance ici : elle n'est connue qu'après la décélération,
@@ -30,6 +49,7 @@ class TestSession {
     this.decelerationCurve = const [],
     this.decelerationSlope,
     this.decelerationR2,
+    this.samples = const [],
   });
 
   final TestProtocol protocol;
@@ -61,6 +81,9 @@ class TestSession {
   /// Alignement des points de la décélération (0..1) : proche de 1 = linéaire.
   final double? decelerationR2;
 
+  /// Mesures enregistrées pendant l'effort, pour calculer les résultats.
+  final List<TestSample> samples;
+
   bool get isActive =>
       phase == TestPhase.armed ||
       phase == TestPhase.running ||
@@ -79,6 +102,7 @@ class TestSession {
     List<(double, double)>? decelerationCurve,
     double? decelerationSlope,
     double? decelerationR2,
+    List<TestSample>? samples,
   }) {
     return TestSession(
       protocol: protocol,
@@ -94,6 +118,7 @@ class TestSession {
       decelerationCurve: decelerationCurve ?? this.decelerationCurve,
       decelerationSlope: decelerationSlope ?? this.decelerationSlope,
       decelerationR2: decelerationR2 ?? this.decelerationR2,
+      samples: samples ?? this.samples,
     );
   }
 }

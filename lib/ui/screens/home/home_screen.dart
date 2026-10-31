@@ -6,10 +6,11 @@ import '../../../core/utils/formatters.dart';
 import '../../../models/camera_state.dart';
 import '../../../models/heart_rate.dart';
 import '../../../models/sensor_connection.dart';
+import '../../../models/test_protocol.dart';
 import '../../../models/test_result.dart';
 import '../../../services/app_services.dart';
+import '../../../services/storage/results_service.dart';
 import '../../shell/app_shell.dart';
-import '../../widgets/coming_soon.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/protocol_icon.dart';
 import '../../widgets/safit_button.dart';
@@ -20,6 +21,7 @@ import '../../widgets/safit_page.dart';
 import '../../widgets/section_header.dart';
 import '../../widgets/status_tile.dart';
 import '../expert/camera_lab_screen.dart';
+import '../results/test_result_screen.dart';
 import '../sensors/heart_rate_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -32,12 +34,30 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   static const _recentCount = 2;
 
+  ResultsService? _service;
   late Future<List<TestResult>> _results;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _results = AppServices.of(context).results.listResults();
+    final service = AppServices.of(context).results;
+    if (service == _service) return;
+    _service?.changes.removeListener(_reload);
+    _service = service..changes.addListener(_reload);
+    _results = service.listResults();
+  }
+
+  @override
+  void dispose() {
+    _service?.changes.removeListener(_reload);
+    super.dispose();
+  }
+
+  /// Un test vient d'être enregistré : on relit l'historique.
+  void _reload() {
+    setState(() {
+      _results = _service!.listResults();
+    });
   }
 
   @override
@@ -174,20 +194,25 @@ class _RecentTestTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final metrics = [
-      if (result.avgPowerW != null) '${result.avgPowerW!.round()} W',
-      if (result.peakPowerW != null) 'Pmax ${result.peakPowerW!.round()} W',
-      if (result.avgHeartRateBpm != null) '${result.avgHeartRateBpm} bpm',
-      if (result.avgPowerW == null && result.frictionForceN != null)
-        '${result.frictionForceN!.toStringAsFixed(1)} N',
-    ];
+    // Les chiffres qui comptent pour chaque type de test.
+    final metrics = switch (result.protocol) {
+      TestProtocol.frictionCalibration => [
+          if (result.frictionForceN != null) '${result.frictionForceN!.toStringAsFixed(1)} N',
+        ],
+      TestProtocol.forceVelocity => [
+          if (result.peakPowerW != null) 'Pmax ${result.peakPowerW!.round()} W',
+        ],
+      TestProtocol.subMaximal || TestProtocol.incremental => [
+          if (result.avgPowerW != null) '${result.avgPowerW!.round()} W',
+          if (result.avgHeartRateBpm != null) '${result.avgHeartRateBpm} bpm',
+        ],
+    };
     return SafitListTile(
       icon: result.protocol.icon,
       title: result.protocol.title,
       subtitle: formatDateTime(result.date),
       footer: Text(metrics.join(' · ')),
-      // Ouvrira le détail de la séance quand l'écran existera.
-      onTap: () => showComingSoon(context),
+      onTap: () => TestResultScreen.open(context, result),
     );
   }
 }

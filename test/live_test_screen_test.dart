@@ -56,6 +56,24 @@ void main() {
     // Pente simulée : -12 tr/min par seconde, au bruit près.
     expect(find.textContaining(RegExp(r'^-1[12]\.\d$')), findsOneWidget);
     expect(find.text('décélération linéaire'), findsOneWidget);
+
+    // Le test est enregistré dans l'historique, et son bilan s'ouvre.
+    final saved = await services.results.listResults();
+    expect(saved.first.protocol, TestProtocol.incremental);
+    expect(saved.first.stages, isNotEmpty);
+
+    await tester.tap(find.text('Voir les résultats'));
+    await tester.pumpAndSettle();
+    expect(find.text('Bilan'), findsOneWidget);
+    final page = find.byType(Scrollable).first;
+    await tester.scrollUntilVisible(find.text('Par palier'), 200, scrollable: page);
+    expect(find.text('Par palier'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.textContaining('paramètres d\'ergocycle provisoires'),
+      200,
+      scrollable: page,
+    );
+    expect(find.textContaining('paramètres d\'ergocycle provisoires'), findsOneWidget);
     await close(tester);
   });
 
