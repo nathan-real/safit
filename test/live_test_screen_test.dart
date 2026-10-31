@@ -48,9 +48,14 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('Arrêtez de pédaler'), findsOneWidget);
+    expect(find.text('Vitesse du volant'), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 15));
     expect(find.text('Mesure terminée'), findsOneWidget);
+    expect(find.text('Décélération mesurée'), findsOneWidget);
+    // Pente simulée : -12 tr/min par seconde, au bruit près.
+    expect(find.textContaining(RegExp(r'^-1[12]\.\d$')), findsOneWidget);
+    expect(find.text('décélération linéaire'), findsOneWidget);
     await close(tester);
   });
 

@@ -27,6 +27,9 @@ class TestSession {
     this.stageCount,
     this.stageRemaining,
     this.remaining,
+    this.decelerationCurve = const [],
+    this.decelerationSlope,
+    this.decelerationR2,
   });
 
   final TestProtocol protocol;
@@ -48,6 +51,16 @@ class TestSession {
   /// Temps restant avant le signal d'arrêt, pour les tests de durée fixe.
   final Duration? remaining;
 
+  /// Vitesse du volant pendant la décélération : (secondes depuis l'arrêt, rpm).
+  final List<(double, double)> decelerationCurve;
+
+  /// Pente de la décélération (rpm par seconde, négative), connue à la fin.
+  /// Elle sert à calculer la force de friction de la courroie.
+  final double? decelerationSlope;
+
+  /// Alignement des points de la décélération (0..1) : proche de 1 = linéaire.
+  final double? decelerationR2;
+
   bool get isActive =>
       phase == TestPhase.armed ||
       phase == TestPhase.running ||
@@ -63,6 +76,9 @@ class TestSession {
     int? stageCount,
     Duration? stageRemaining,
     Duration? remaining,
+    List<(double, double)>? decelerationCurve,
+    double? decelerationSlope,
+    double? decelerationR2,
   }) {
     return TestSession(
       protocol: protocol,
@@ -75,6 +91,9 @@ class TestSession {
       stageCount: stageCount ?? this.stageCount,
       stageRemaining: stageRemaining ?? this.stageRemaining,
       remaining: remaining ?? this.remaining,
+      decelerationCurve: decelerationCurve ?? this.decelerationCurve,
+      decelerationSlope: decelerationSlope ?? this.decelerationSlope,
+      decelerationR2: decelerationR2 ?? this.decelerationR2,
     );
   }
 }

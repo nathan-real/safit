@@ -30,6 +30,12 @@ void main() {
     await tester.pump(const Duration(seconds: 10));
     expect(service.session.value!.phase, TestPhase.finished);
     expect(service.session.value!.cadenceRpm, 0);
+
+    // La pente de la décélération est mesurée sur la courbe enregistrée.
+    final finished = service.session.value!;
+    expect(finished.decelerationCurve.length, greaterThan(10));
+    expect(finished.decelerationSlope, closeTo(-12, 0.5));
+    expect(finished.decelerationR2, greaterThan(0.99));
   });
 
   testWidgets('Arrêter avant le premier trait annule le test', (tester) async {

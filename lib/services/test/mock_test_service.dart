@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
+import '../../domain/signal_processing/linear_fit.dart';
 import '../../models/test_protocol.dart';
 import '../../models/test_session.dart';
 import 'test_data_service.dart';
@@ -25,12 +26,18 @@ class MockTestService implements TestDataService {
   final _random = Random();
   Timer? _timer;
 
+  // Début de la décélération en cours (instant et vitesse à l'arrêt du pédalage).
+  Duration? _decelerationStart;
+  double? _decelerationStartRpm;
+
   @override
   ValueListenable<TestSession?> get session => _session;
 
   @override
   Future<void> arm(TestProtocol protocol) async {
     _timer?.cancel();
+    _decelerationStart = null;
+    _decelerationStartRpm = null;
     final incremental = protocol == TestProtocol.incremental;
     _session.value = TestSession(
       protocol: protocol,
@@ -78,14 +85,7 @@ class MockTestService implements TestDataService {
     final elapsed = s.elapsed + _tick;
 
     if (s.phase == TestPhase.deceleration) {
-      final cadence = (s.cadenceRpm ?? 0) -
-          _decelerationRpmPerSecond * _tick.inMilliseconds / 1000;
-      if (cadence <= 0) {
-        _timer?.cancel();
-        _session.value = s.copyWith(phase: TestPhase.finished, cadenceRpm: 0, elapsed: elapsed);
-      } else {
-        _session.value = s.copyWith(cadenceRpm: cadence, elapsed: elapsed);
-      }
+      _decelerationTick(s, elapsed);
       return;
     }
 
@@ -96,6 +96,37 @@ class MockTestService implements TestDataService {
       TestProtocol.forceVelocity => _sprintTick(s, elapsed),
     };
     _session.value = next.copyWith(heartRateBpm: _heartRate(elapsed));
+  }
+
+  /// Le volant ralentit à vitesse constante (avec un peu de bruit de mesure).
+  /// Quand il s'arrête, on ajuste une droite sur la courbe : sa pente est la
+  /// décélération, qui donnera la force de friction.
+  void _decelerationTick(TestSession s, Duration elapsed) {
+    _decelerationStart ??= elapsed - _tick;
+    _decelerationStartRpm ??= s.cadenceRpm ?? 0;
+    final t = (elapsed - _decelerationStart!).inMilliseconds / 1000;
+    final speed = _decelerationStartRpm! - _decelerationRpmPerSecond * t;
+
+    if (speed <= 0) {
+      _timer?.cancel();
+      _decelerationStart = null;
+      _decelerationStartRpm = null;
+      final fit = fitLine(s.decelerationCurve);
+      _session.value = s.copyWith(
+        phase: TestPhase.finished,
+        cadenceRpm: 0,
+        elapsed: elapsed,
+        decelerationSlope: fit?.slope,
+        decelerationR2: fit?.r2,
+      );
+      return;
+    }
+    final measured = speed + _noise(0.4);
+    _session.value = s.copyWith(
+      cadenceRpm: measured,
+      elapsed: elapsed,
+      decelerationCurve: [...s.decelerationCurve, (t, measured)],
+    );
   }
 
   TestSession _steadyTick(TestSession s, Duration elapsed, double cadence, Duration length) {

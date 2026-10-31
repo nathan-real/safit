@@ -14,6 +14,7 @@ import '../../widgets/safit_button.dart';
 import '../../widgets/safit_card.dart';
 import '../../widgets/safit_header.dart';
 import '../../widgets/safit_page.dart';
+import 'deceleration_view.dart';
 
 /// Écran du test en direct : attente des premiers coups de pédale, puis
 /// cadence, fréquence cardiaque et chrono, avec un affichage propre à chaque
@@ -151,8 +152,9 @@ class _LiveTestScreenState extends State<LiveTestScreen> {
                 switch (phase) {
                   TestPhase.armed => const _ArmedView(),
                   TestPhase.running => _RunningView(session!),
-                  TestPhase.deceleration => _DecelerationView(session!),
-                  TestPhase.finished || TestPhase.aborted => const _FinishedView(),
+                  TestPhase.deceleration => DecelerationView(session!),
+                  TestPhase.finished => DecelerationResult(session!),
+                  TestPhase.aborted => const _AbortedView(),
                 },
               ],
             );
@@ -478,40 +480,9 @@ class _Banner extends StatelessWidget {
   }
 }
 
-/// Provisoire : l'écran dédié à la décélération fera l'objet du ticket suivant.
-class _DecelerationView extends StatelessWidget {
-  const _DecelerationView(this.session);
-
-  final TestSession session;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    return Padding(
-      padding: const EdgeInsets.only(top: AppSpacing.xxl),
-      child: Column(
-        children: [
-          Text('Arrêtez de pédaler', style: textTheme.headlineMedium, textAlign: TextAlign.center),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            'Laissez le volant ralentir tout seul.',
-            style: textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
-          ),
-          const SizedBox(height: AppSpacing.xl),
-          Text(
-            session.cadenceRpm?.round().toString() ?? '--',
-            style: textTheme.displayLarge?.copyWith(fontWeight: FontWeight.w800),
-          ),
-          Text('rpm', style: textTheme.titleMedium?.copyWith(color: AppColors.textSecondary)),
-        ],
-      ),
-    );
-  }
-}
-
-/// Provisoire : l'écran des résultats fera l'objet d'un ticket suivant.
-class _FinishedView extends StatelessWidget {
-  const _FinishedView();
+/// Test annulé avant la fin.
+class _AbortedView extends StatelessWidget {
+  const _AbortedView();
 
   @override
   Widget build(BuildContext context) {
