@@ -99,9 +99,11 @@ class MockTestService implements TestDataService {
   }
 
   TestSession _steadyTick(TestSession s, Duration elapsed, double cadence, Duration length) {
+    final remaining = length - elapsed;
     return s.copyWith(
       elapsed: elapsed,
       cadenceRpm: cadence + _noise(2),
+      remaining: remaining.isNegative ? Duration.zero : remaining,
       phase: elapsed >= length ? TestPhase.deceleration : null,
     );
   }
@@ -116,7 +118,9 @@ class MockTestService implements TestDataService {
       elapsed: elapsed,
       stageIndex: stage,
       targetCadenceRpm: target,
-      cadenceRpm: target + _noise(3),
+      stageRemaining: _stageDuration * (stage + 1) - elapsed,
+      // Écart volontairement visible de temps en temps (« trop vite / trop lent »).
+      cadenceRpm: target + _noise(5),
     );
   }
 

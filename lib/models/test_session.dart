@@ -25,6 +25,8 @@ class TestSession {
     this.targetCadenceRpm,
     this.stageIndex,
     this.stageCount,
+    this.stageRemaining,
+    this.remaining,
   });
 
   final TestProtocol protocol;
@@ -40,6 +42,12 @@ class TestSession {
   final int? stageIndex;
   final int? stageCount;
 
+  /// Temps avant le palier suivant (test incrémental).
+  final Duration? stageRemaining;
+
+  /// Temps restant avant le signal d'arrêt, pour les tests de durée fixe.
+  final Duration? remaining;
+
   bool get isActive =>
       phase == TestPhase.armed ||
       phase == TestPhase.running ||
@@ -53,6 +61,8 @@ class TestSession {
     double? targetCadenceRpm,
     int? stageIndex,
     int? stageCount,
+    Duration? stageRemaining,
+    Duration? remaining,
   }) {
     return TestSession(
       protocol: protocol,
@@ -63,6 +73,8 @@ class TestSession {
       targetCadenceRpm: targetCadenceRpm ?? this.targetCadenceRpm,
       stageIndex: stageIndex ?? this.stageIndex,
       stageCount: stageCount ?? this.stageCount,
+      stageRemaining: stageRemaining ?? this.stageRemaining,
+      remaining: remaining ?? this.remaining,
     );
   }
 }

@@ -18,7 +18,7 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     final running = service.session.value!;
     expect(running.phase, TestPhase.running);
-    expect(running.cadenceRpm, closeTo(40, 3));
+    expect(running.cadenceRpm, closeTo(40, 5));
     expect(running.heartRateBpm, isNotNull);
 
     await tester.pump(const Duration(seconds: 61));

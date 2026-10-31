@@ -151,7 +151,7 @@ class _CameraTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final (status, level) = switch (state.status) {
       CameraStatus.ready when !state.highSpeed =>
-        ('Prête · ${state.fps?.round() ?? '--'} fps seulement', StatusLevel.pending),
+        ('Prête · ${state.fps?.round() ?? '--'} fps', StatusLevel.pending),
       CameraStatus.ready => ('Prête · ${state.fps?.round() ?? '--'} fps', StatusLevel.ready),
       CameraStatus.checking => ('Vérification…', StatusLevel.pending),
       CameraStatus.error => ('Indisponible', StatusLevel.off),

@@ -3,11 +3,11 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../models/test_protocol.dart';
 import '../../../services/app_services.dart';
-import '../../widgets/coming_soon.dart';
 import '../../widgets/safit_button.dart';
 import '../../widgets/safit_header.dart';
 import '../../widgets/safit_page.dart';
 import '../../widgets/step_indicator.dart';
+import 'live_test_screen.dart';
 import 'preparation_steps.dart';
 
 enum PreparationStep {
@@ -49,8 +49,7 @@ class _PreparationFlowState extends State<PreparationFlow> {
 
   void _next() {
     if (_isLast) {
-      // Lancera l'écran du test en direct.
-      showComingSoon(context);
+      LiveTestScreen.replace(context, widget.protocol);
     } else {
       setState(() => _index++);
     }
