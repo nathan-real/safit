@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../services/app_services.dart';
 import '../../../services/camera/high_speed_channel.dart';
 import '../../widgets/safit_button.dart';
 import '../../widgets/safit_card.dart';
@@ -19,10 +20,13 @@ import 'roi_overlay.dart';
 class CameraLabScreen extends StatefulWidget {
   const CameraLabScreen({super.key});
 
-  static Future<void> open(BuildContext context) {
-    return Navigator.of(context).push(
+  /// Au retour, l'état de la caméra est relu (la zone a pu être réglée).
+  static Future<void> open(BuildContext context) async {
+    final camera = AppServices.of(context).camera;
+    await Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const CameraLabScreen()),
     );
+    await camera.refresh();
   }
 
   @override
@@ -32,10 +36,27 @@ class CameraLabScreen extends StatefulWidget {
 class _CameraLabScreenState extends State<CameraLabScreen> {
   final _lab = CameraLabController(HighSpeedCameraChannel());
 
+  bool _marksLoaded = false;
+
   @override
   void initState() {
     super.initState();
     _lab.loadSavedRoi();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_marksLoaded) return;
+    _marksLoaded = true;
+    _lab.setMarkersPerTurn(AppServices.of(context).ergocycle.parameters.value.marksPerFlywheelTurn);
+  }
+
+  /// Le nombre de traits est un paramètre de l'ergocycle : il sert aussi au test.
+  void _setMarks(int value) {
+    _lab.setMarkersPerTurn(value);
+    final ergocycle = AppServices.of(context).ergocycle;
+    ergocycle.save(ergocycle.parameters.value.copyWith(marksPerFlywheelTurn: _lab.markersPerTurn));
   }
 
   @override
@@ -208,12 +229,12 @@ class _CameraLabScreenState extends State<CameraLabScreen> {
                 children: [
                   IconButton(
                     icon: const Icon(Icons.remove),
-                    onPressed: () => _lab.setMarkersPerTurn(_lab.markersPerTurn - 1),
+                    onPressed: () => _setMarks(_lab.markersPerTurn - 1),
                   ),
                   Text('${_lab.markersPerTurn}', style: textTheme.titleMedium),
                   IconButton(
                     icon: const Icon(Icons.add),
-                    onPressed: () => _lab.setMarkersPerTurn(_lab.markersPerTurn + 1),
+                    onPressed: () => _setMarks(_lab.markersPerTurn + 1),
                   ),
                 ],
               ),

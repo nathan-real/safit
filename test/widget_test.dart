@@ -23,7 +23,7 @@ void main() {
 
     await tester.tap(find.text('Résultats'));
     await tester.pumpAndSettle();
-    expect(find.text('Aucun résultat'), findsOneWidget);
+    expect(find.text('Tous'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Réglages').hitTestable());
     await tester.pumpAndSettle();

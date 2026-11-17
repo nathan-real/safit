@@ -10,12 +10,28 @@ class StageResult {
     this.avgPowerW,
   });
 
+  factory StageResult.fromJson(Map<String, Object?> j) => StageResult(
+        index: j['index'] as int,
+        targetCadenceRpm: (j['targetCadenceRpm'] as num).toDouble(),
+        avgCadenceRpm: _double(j['avgCadenceRpm']),
+        avgHeartRateBpm: j['avgHeartRateBpm'] as int?,
+        avgPowerW: _double(j['avgPowerW']),
+      );
+
   /// Palier, à partir de 0.
   final int index;
   final double targetCadenceRpm;
   final double? avgCadenceRpm;
   final int? avgHeartRateBpm;
   final double? avgPowerW;
+
+  Map<String, Object?> toJson() => {
+        'index': index,
+        'targetCadenceRpm': targetCadenceRpm,
+        'avgCadenceRpm': avgCadenceRpm,
+        'avgHeartRateBpm': avgHeartRateBpm,
+        'avgPowerW': avgPowerW,
+      };
 }
 
 /// Résultats d'un essai du test sous-maximal.
@@ -30,6 +46,16 @@ class BoutResult {
     this.decelerationR2,
   });
 
+  factory BoutResult.fromJson(Map<String, Object?> j) => BoutResult(
+        index: j['index'] as int,
+        duration: Duration(milliseconds: j['durationMs'] as int),
+        avgPowerW: _double(j['avgPowerW']),
+        avgHeartRateBpm: j['avgHeartRateBpm'] as int?,
+        avgCadenceRpm: _double(j['avgCadenceRpm']),
+        frictionForceN: _double(j['frictionForceN']),
+        decelerationR2: _double(j['decelerationR2']),
+      );
+
   /// Essai, à partir de 0.
   final int index;
   final Duration duration;
@@ -38,6 +64,16 @@ class BoutResult {
   final double? avgCadenceRpm;
   final double? frictionForceN;
   final double? decelerationR2;
+
+  Map<String, Object?> toJson() => {
+        'index': index,
+        'durationMs': duration.inMilliseconds,
+        'avgPowerW': avgPowerW,
+        'avgHeartRateBpm': avgHeartRateBpm,
+        'avgCadenceRpm': avgCadenceRpm,
+        'frictionForceN': frictionForceN,
+        'decelerationR2': decelerationR2,
+      };
 }
 
 /// Résultat enregistré d'un test terminé.
@@ -100,4 +136,52 @@ class TestResult {
   /// Vrai si la force et la puissance ont été calculées avec des paramètres
   /// d'ergocycle provisoires.
   final bool provisionalErgocycle;
+
+  factory TestResult.fromJson(Map<String, Object?> j) => TestResult(
+        id: j['id'] as String,
+        protocol: TestProtocol.values.byName(j['protocol'] as String),
+        date: DateTime.parse(j['date'] as String),
+        duration: Duration(milliseconds: j['durationMs'] as int),
+        avgPowerW: _double(j['avgPowerW']),
+        peakPowerW: _double(j['peakPowerW']),
+        avgHeartRateBpm: j['avgHeartRateBpm'] as int?,
+        maxHeartRateBpm: j['maxHeartRateBpm'] as int?,
+        avgCadenceRpm: _double(j['avgCadenceRpm']),
+        peakCadenceRpm: _double(j['peakCadenceRpm']),
+        frictionForceN: _double(j['frictionForceN']),
+        decelerationSlope: _double(j['decelerationSlope']),
+        decelerationR2: _double(j['decelerationR2']),
+        stages: [
+          for (final s in (j['stages'] as List? ?? const []))
+            StageResult.fromJson(s as Map<String, Object?>),
+        ],
+        bouts: [
+          for (final b in (j['bouts'] as List? ?? const []))
+            BoutResult.fromJson(b as Map<String, Object?>),
+        ],
+        heartRatePowerSlope: _double(j['heartRatePowerSlope']),
+        provisionalErgocycle: j['provisionalErgocycle'] as bool? ?? false,
+      );
+
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'protocol': protocol.name,
+        'date': date.toIso8601String(),
+        'durationMs': duration.inMilliseconds,
+        'avgPowerW': avgPowerW,
+        'peakPowerW': peakPowerW,
+        'avgHeartRateBpm': avgHeartRateBpm,
+        'maxHeartRateBpm': maxHeartRateBpm,
+        'avgCadenceRpm': avgCadenceRpm,
+        'peakCadenceRpm': peakCadenceRpm,
+        'frictionForceN': frictionForceN,
+        'decelerationSlope': decelerationSlope,
+        'decelerationR2': decelerationR2,
+        'stages': [for (final s in stages) s.toJson()],
+        'bouts': [for (final b in bouts) b.toJson()],
+        'heartRatePowerSlope': heartRatePowerSlope,
+        'provisionalErgocycle': provisionalErgocycle,
+      };
 }
+
+double? _double(Object? value) => (value as num?)?.toDouble();

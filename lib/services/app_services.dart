@@ -2,16 +2,23 @@ import 'dart:io';
 
 import 'package:flutter/widgets.dart';
 
+import '../models/camera_state.dart';
 import 'ble/heart_rate_service.dart';
 import 'ble/mock_heart_rate_service.dart';
 import 'camera/camera_service.dart';
 import 'camera/mock_camera_service.dart';
 import 'camera/real_camera_service.dart';
-import 'storage/mock_profile_service.dart';
+import 'storage/account_service.dart';
+import 'storage/ergocycle_service.dart';
+import 'storage/local_account_service.dart';
+import 'storage/local_results_service.dart';
+import 'storage/local_store.dart';
+import 'storage/mock_account_service.dart';
 import 'storage/mock_results_service.dart';
-import 'storage/profile_service.dart';
 import 'storage/results_service.dart';
+import 'test/auto_test_service.dart';
 import 'test/mock_test_service.dart';
+import 'test/real_test_service.dart';
 import 'test/test_data_service.dart';
 
 /// Regroupe les services de l'app. C'est le seul endroit où l'on choisit
@@ -22,29 +29,53 @@ class ServiceRegistry {
     required this.camera,
     required this.testData,
     required this.results,
-    required this.profile,
+    required this.account,
+    required this.ergocycle,
   });
 
-  /// Tout simulé. [live] à faux coupe les minuteries (tests automatisés).
-  factory ServiceRegistry.mock({bool live = true}) {
+  /// Tout simulé, en mémoire. [live] à faux coupe les minuteries (tests
+  /// automatisés). [account] : état du compte au lancement.
+  factory ServiceRegistry.mock({bool live = true, AccountStatus account = AccountStatus.loggedIn}) {
     return ServiceRegistry(
       heartRate: MockHeartRateService(live: live),
       camera: MockCameraService(),
       testData: MockTestService(),
       results: MockResultsService(),
-      profile: MockProfileService(),
+      account: MockAccountService(initial: account),
+      ergocycle: MemoryErgocycleService(),
     );
   }
 
-  /// Ce qu'utilise l'app : la vraie caméra sur Android, le reste encore simulé
-  /// (la vraie ceinture Polar et le stockage arriveront ici).
+  /// Ce qu'utilise l'app : compte, historique et réglages enregistrés sur le
+  /// téléphone ; vraie caméra sur Android. La ceinture reste simulée en
+  /// attendant la version Bluetooth.
   factory ServiceRegistry.forDevice() {
+    final store = LocalStore.appDocuments();
+    final heartRate = MockHeartRateService();
+    final ergocycle = LocalErgocycleService(store);
+    final CameraService camera;
+    final TestDataService testData;
+    if (Platform.isAndroid) {
+      camera = RealCameraService();
+      testData = AutoTestService(
+        real: RealTestService(heartRate: heartRate, ergocycle: ergocycle.parameters),
+        simulated: MockTestService(),
+        cameraReady: () {
+          final c = camera.state.value;
+          return c.highSpeed && c.status == CameraStatus.ready;
+        },
+      );
+    } else {
+      camera = MockCameraService();
+      testData = MockTestService();
+    }
     return ServiceRegistry(
-      heartRate: MockHeartRateService(),
-      camera: Platform.isAndroid ? RealCameraService() : MockCameraService(),
-      testData: MockTestService(),
-      results: MockResultsService(),
-      profile: MockProfileService(),
+      heartRate: heartRate,
+      camera: camera,
+      testData: testData,
+      results: LocalResultsService(store),
+      account: LocalAccountService(store),
+      ergocycle: ergocycle,
     );
   }
 
@@ -52,13 +83,20 @@ class ServiceRegistry {
   final CameraService camera;
   final TestDataService testData;
   final ResultsService results;
-  final ProfileService profile;
+  final AccountService account;
+  final ErgocycleService ergocycle;
+
+  /// Relit ce qui est enregistré sur le téléphone (compte, réglages).
+  Future<void> load() async {
+    await Future.wait([account.load(), ergocycle.load()]);
+  }
 
   void dispose() {
     heartRate.dispose();
     camera.dispose();
     testData.dispose();
-    profile.dispose();
+    account.dispose();
+    ergocycle.dispose();
   }
 }
 

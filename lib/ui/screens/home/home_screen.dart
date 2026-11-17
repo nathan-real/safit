@@ -2,26 +2,22 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
-import '../../../core/utils/formatters.dart';
 import '../../../models/camera_state.dart';
 import '../../../models/heart_rate.dart';
 import '../../../models/sensor_connection.dart';
-import '../../../models/test_protocol.dart';
 import '../../../models/test_result.dart';
 import '../../../services/app_services.dart';
 import '../../../services/storage/results_service.dart';
 import '../../shell/app_shell.dart';
 import '../../widgets/empty_state.dart';
-import '../../widgets/protocol_icon.dart';
+import '../../widgets/result_tile.dart';
 import '../../widgets/safit_button.dart';
 import '../../widgets/safit_header.dart';
-import '../../widgets/safit_list_tile.dart';
 import '../../widgets/safit_logo.dart';
 import '../../widgets/safit_page.dart';
 import '../../widgets/section_header.dart';
 import '../../widgets/status_tile.dart';
 import '../expert/camera_lab_screen.dart';
-import '../results/test_result_screen.dart';
 import '../sensors/heart_rate_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -71,7 +67,7 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         const SizedBox(height: AppSpacing.md),
         ValueListenableBuilder(
-          valueListenable: services.profile.profile,
+          valueListenable: services.account.profile,
           builder: (_, profile, _) => Text(
             profile == null ? 'Bonjour 👋' : 'Bonjour ${profile.firstName} 👋',
             style: textTheme.headlineMedium,
@@ -126,7 +122,7 @@ class _HomeScreenState extends State<HomeScreen> {
             return Column(
               children: [
                 for (final result in results.take(_recentCount)) ...[
-                  _RecentTestTile(result),
+                  ResultTile(result),
                   const SizedBox(height: AppSpacing.md),
                 ],
               ],
@@ -183,36 +179,6 @@ class _CameraTile extends StatelessWidget {
       status: status,
       level: level,
       onTap: () => CameraLabScreen.open(context),
-    );
-  }
-}
-
-class _RecentTestTile extends StatelessWidget {
-  const _RecentTestTile(this.result);
-
-  final TestResult result;
-
-  @override
-  Widget build(BuildContext context) {
-    // Les chiffres qui comptent pour chaque type de test.
-    final metrics = switch (result.protocol) {
-      TestProtocol.frictionCalibration => [
-          if (result.frictionForceN != null) '${result.frictionForceN!.toStringAsFixed(1)} N',
-        ],
-      TestProtocol.forceVelocity => [
-          if (result.peakPowerW != null) 'Pmax ${result.peakPowerW!.round()} W',
-        ],
-      TestProtocol.subMaximal || TestProtocol.incremental => [
-          if (result.avgPowerW != null) '${result.avgPowerW!.round()} W',
-          if (result.avgHeartRateBpm != null) '${result.avgHeartRateBpm} bpm',
-        ],
-    };
-    return SafitListTile(
-      icon: result.protocol.icon,
-      title: result.protocol.title,
-      subtitle: formatDateTime(result.date),
-      footer: Text(metrics.join(' · ')),
-      onTap: () => TestResultScreen.open(context, result),
     );
   }
 }

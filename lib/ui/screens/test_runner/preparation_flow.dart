@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_spacing.dart';
+import '../../../models/camera_state.dart';
 import '../../../models/test_protocol.dart';
 import '../../../services/app_services.dart';
 import '../../widgets/safit_button.dart';
@@ -155,10 +156,15 @@ class _ContinueButton extends StatelessWidget {
     return switch (step) {
       PreparationStep.camera => ValueListenableBuilder(
           valueListenable: services.camera.state,
-          builder: (_, camera, _) => SafitButton(
-            label: 'Continuer',
-            onPressed: camera.isReady ? onPressed : null,
-          ),
+          // Sans caméra 240 i/s prête (émulateur, zone non réglée), le test
+          // est simulé : on peut quand même continuer, en le sachant.
+          builder: (_, camera, _) {
+            final measured = camera.isReady && camera.highSpeed;
+            return SafitButton(
+              label: measured ? 'Continuer' : 'Continuer en simulation',
+              onPressed: camera.status == CameraStatus.checking ? null : onPressed,
+            );
+          },
         ),
       PreparationStep.heartRate => ValueListenableBuilder(
           valueListenable: services.heartRate.state,

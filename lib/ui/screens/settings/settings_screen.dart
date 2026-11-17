@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
-import '../../widgets/coming_soon.dart';
 import '../../widgets/safit_card.dart';
 import '../../widgets/safit_header.dart';
 import '../../widgets/safit_page.dart';
 import '../../widgets/section_header.dart';
 import '../expert/camera_lab_screen.dart';
+import '../expert/expert_screen.dart';
 import '../sensors/heart_rate_screen.dart';
+import 'ergocycle_screen.dart';
+import 'tutorials_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -22,8 +24,6 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    void soon() => showComingSoon(context);
-
     return Scaffold(
       body: SafitPage(
         header: const SafitHeader(title: 'Réglages', showSettings: false),
@@ -43,18 +43,27 @@ class SettingsScreen extends StatelessWidget {
             ),
           ]),
           _SettingsGroup(title: 'Ergocycle', tiles: [
-            _SettingsTile(Icons.pedal_bike_outlined, 'Paramètres machine', onTap: soon),
+            _SettingsTile(
+              Icons.pedal_bike_outlined,
+              'Paramètres machine',
+              subtitle: 'Masse et tour du volant, transmission, traits',
+              onTap: () => ErgocycleScreen.open(context),
+            ),
           ]),
           _SettingsGroup(title: 'Application', tiles: [
-            _SettingsTile(Icons.straighten, 'Unités', onTap: soon),
-            _SettingsTile(Icons.school_outlined, 'Tutoriels', onTap: soon),
+            _SettingsTile(
+              Icons.school_outlined,
+              'Tutoriels',
+              subtitle: 'Installation et déroulé des tests',
+              onTap: () => TutorialsScreen.open(context),
+            ),
           ]),
           _SettingsGroup(title: 'Avancé', tiles: [
             _SettingsTile(
-              Icons.lock_outline,
+              Icons.tune,
               'Mode expert',
-              subtitle: 'Zone de détection, calibration, diagnostic',
-              onTap: soon,
+              subtitle: 'Zone de détection, ergocycle, diagnostic',
+              onTap: () => ExpertScreen.open(context),
             ),
           ]),
         ],

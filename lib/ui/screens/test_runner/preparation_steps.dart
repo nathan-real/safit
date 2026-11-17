@@ -160,14 +160,14 @@ class CameraCheckStep extends StatelessWidget {
               const SizedBox(height: AppSpacing.lg),
               const _Notice(
                 text: 'Ce téléphone ne permet pas le mode 240 images/s : '
-                    'les mesures seront moins précises.',
+                    'le test sera simulé.',
               ),
             ],
             if (state.status == CameraStatus.notConfigured) ...[
               const SizedBox(height: AppSpacing.lg),
               _Notice(
-                text: 'La zone de détection n\'est pas encore réglée. '
-                    'Demandez à l\'expérimentateur de la régler.',
+                text: 'La zone de détection n\'est pas encore réglée : sans elle, '
+                    'le test sera simulé. Demandez à l\'expérimentateur de la régler.',
                 actionLabel: 'Régler la caméra',
                 onAction: () => _openCameraSettings(context),
               ),

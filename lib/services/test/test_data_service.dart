@@ -4,11 +4,14 @@ import '../../models/test_protocol.dart';
 import '../../models/test_session.dart';
 
 /// Déroulement d'un test : armement, mesure en direct, décélération, fin.
-/// Implémentations : [MockTestService], puis la version branchée
-/// sur la caméra et la ceinture.
+/// Implémentations : [MockTestService] (simulé), [RealTestService] (caméra et
+/// ceinture) et [AutoTestService] (choisit entre les deux à chaque test).
 abstract interface class TestDataService {
   /// Test en cours, ou null s'il n'y en a pas.
   ValueListenable<TestSession?> get session;
+
+  /// Vrai si les mesures sont simulées (pas de caméra 240 i/s).
+  bool get isSimulation;
 
   /// Prépare le test : la mesure démarrera aux premiers traits détectés.
   /// [bout] : numéro de l'essai (à partir de 0) pour les tests en plusieurs

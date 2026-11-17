@@ -22,5 +22,7 @@ void main() {
   );
 
   // Choix des services réels ou simulés : voir ServiceRegistry.forDevice.
-  runApp(SafitApp(services: ServiceRegistry.forDevice()));
+  // Le compte et les réglages sont relus pendant que l'écran d'accueil s'affiche.
+  final services = ServiceRegistry.forDevice()..load();
+  runApp(SafitApp(services: services));
 }

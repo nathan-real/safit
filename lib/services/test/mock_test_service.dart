@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
+import '../../domain/protocol_timeline.dart';
 import '../../domain/signal_processing/linear_fit.dart';
 import '../../models/test_protocol.dart';
 import '../../models/test_session.dart';
@@ -14,10 +15,6 @@ class MockTestService implements TestDataService {
 
   /// Délai simulé avant le passage des premiers traits.
   static const _armDelay = Duration(seconds: 2);
-
-  /// Paliers du test incrémental (rpm), environ 1 min chacun.
-  static const incrementalStages = [40.0, 50.0, 60.0, 70.0, 80.0];
-  static const _stageDuration = Duration(minutes: 1);
 
   /// Pente de ralentissement simulée pendant la décélération (rpm/s).
   /// Plus forte à chaque essai : la courroie a été resserrée.
@@ -42,6 +39,9 @@ class MockTestService implements TestDataService {
   ValueListenable<TestSession?> get session => _session;
 
   @override
+  bool get isSimulation => true;
+
+  @override
   Future<void> arm(TestProtocol protocol, {int bout = 0}) async {
     _timer?.cancel();
     _bout = bout;
@@ -52,8 +52,8 @@ class MockTestService implements TestDataService {
       protocol: protocol,
       phase: TestPhase.armed,
       stageIndex: incremental ? 0 : null,
-      stageCount: incremental ? incrementalStages.length : null,
-      targetCadenceRpm: incremental ? incrementalStages.first : null,
+      stageCount: incremental ? incrementalStagesRpm.length : null,
+      targetCadenceRpm: incremental ? incrementalStagesRpm.first : null,
     );
     _timer = Timer(_armDelay, () {
       _update((s) => s.copyWith(phase: TestPhase.running, heartRateBpm: 75));
@@ -98,12 +98,23 @@ class MockTestService implements TestDataService {
       return;
     }
 
-    final next = switch (s.protocol) {
-      TestProtocol.incremental => _incrementalTick(s, elapsed),
-      TestProtocol.subMaximal => _steadyTick(s, elapsed, 90, const Duration(minutes: 5)),
-      TestProtocol.frictionCalibration => _steadyTick(s, elapsed, 90, const Duration(seconds: 5)),
-      TestProtocol.forceVelocity => _sprintTick(s, elapsed),
+    final p = protocolProgress(s.protocol, elapsed);
+    final cadence = switch (s.protocol) {
+      // Écart volontairement visible de temps en temps (« trop vite / trop lent »).
+      TestProtocol.incremental => p.targetCadenceRpm! + _noise(5),
+      // Accélération rapide qui plafonne vers 130 rpm.
+      TestProtocol.forceVelocity => 130 * (1 - exp(-elapsed.inMilliseconds / 1000 / 1.5)),
+      TestProtocol.subMaximal || TestProtocol.frictionCalibration => 90 + _noise(2),
     };
+    final next = s.copyWith(
+      elapsed: elapsed,
+      cadenceRpm: cadence,
+      stageIndex: p.stageIndex,
+      targetCadenceRpm: p.targetCadenceRpm,
+      stageRemaining: p.stageRemaining,
+      remaining: p.remaining,
+      phase: p.shouldStop ? TestPhase.deceleration : null,
+    );
     final heartRate = _heartRate(elapsed);
     _session.value = next.copyWith(
       heartRateBpm: heartRate,
@@ -150,43 +161,6 @@ class MockTestService implements TestDataService {
       cadenceRpm: measured,
       elapsed: elapsed,
       decelerationCurve: [...s.decelerationCurve, (t, measured)],
-    );
-  }
-
-  TestSession _steadyTick(TestSession s, Duration elapsed, double cadence, Duration length) {
-    final remaining = length - elapsed;
-    return s.copyWith(
-      elapsed: elapsed,
-      cadenceRpm: cadence + _noise(2),
-      remaining: remaining.isNegative ? Duration.zero : remaining,
-      phase: elapsed >= length ? TestPhase.deceleration : null,
-    );
-  }
-
-  TestSession _incrementalTick(TestSession s, Duration elapsed) {
-    final stage = elapsed.inMilliseconds ~/ _stageDuration.inMilliseconds;
-    if (stage >= incrementalStages.length) {
-      return s.copyWith(elapsed: elapsed, phase: TestPhase.deceleration);
-    }
-    final target = incrementalStages[stage];
-    return s.copyWith(
-      elapsed: elapsed,
-      stageIndex: stage,
-      targetCadenceRpm: target,
-      stageRemaining: _stageDuration * (stage + 1) - elapsed,
-      // Écart volontairement visible de temps en temps (« trop vite / trop lent »).
-      cadenceRpm: target + _noise(5),
-    );
-  }
-
-  TestSession _sprintTick(TestSession s, Duration elapsed) {
-    final t = elapsed.inMilliseconds / 1000;
-    // Accélération rapide qui plafonne vers 130 rpm.
-    final cadence = 130 * (1 - exp(-t / 1.5));
-    return s.copyWith(
-      elapsed: elapsed,
-      cadenceRpm: cadence,
-      phase: t >= 7 ? TestPhase.deceleration : null,
     );
   }
 

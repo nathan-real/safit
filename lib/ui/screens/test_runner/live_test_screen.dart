@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
@@ -10,6 +12,7 @@ import '../../../core/utils/formatters.dart';
 import '../../../domain/results/test_summary.dart';
 import '../../../models/ergocycle_parameters.dart';
 import '../../../models/test_protocol.dart';
+import '../../../models/test_recording.dart';
 import '../../../models/test_result.dart';
 import '../../../models/test_session.dart';
 import '../../../services/app_services.dart';
@@ -45,6 +48,7 @@ class LiveTestScreen extends StatefulWidget {
 class _LiveTestScreenState extends State<LiveTestScreen> {
   late TestDataService _test;
   late ResultsService _results;
+  late ValueListenable<ErgocycleParameters> _ergocycle;
   int? _lastStage;
   TestPhase? _lastPhase;
 
@@ -68,11 +72,13 @@ class _LiveTestScreenState extends State<LiveTestScreen> {
     final services = AppServices.of(context);
     _test = services.testData;
     _results = services.results;
+    _ergocycle = services.ergocycle.parameters;
   }
 
   @override
   void initState() {
     super.initState();
+    _keepScreenOn(true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _test.session.addListener(_signalChanges);
       _test.arm(widget.protocol);
@@ -85,7 +91,15 @@ class _LiveTestScreenState extends State<LiveTestScreen> {
     _test.session.removeListener(_signalChanges);
     if (_test.session.value?.isActive ?? false) _test.abort();
     _test.reset();
+    _keepScreenOn(false);
     super.dispose();
+  }
+
+  /// L'écran ne doit pas s'éteindre pendant le test (téléphone posé sur le vélo).
+  static void _keepScreenOn(bool on) {
+    WakelockPlus.toggle(enable: on).catchError((Object _) {
+      // Pas disponible (tests automatisés) : sans conséquence.
+    });
   }
 
   /// Bip + vibration à chaque nouveau palier, et quand il faut arrêter de pédaler.
@@ -133,11 +147,11 @@ class _LiveTestScreenState extends State<LiveTestScreen> {
   void _saveResult() {
     final now = DateTime.now();
     final id = now.microsecondsSinceEpoch.toString();
-    const ergo = ErgocycleParameters.provisionalDefaults;
+    final ergo = _ergocycle.value;
     final result = _completedBouts.length > 1
         ? summarizeBouts(_completedBouts, ergo, id: id, date: now)
         : summarizeTest(_completedBouts.single, ergo, id: id, date: now);
-    _results.save(result);
+    _results.save(result, recording: TestRecording.fromSessions(_completedBouts));
     setState(() => _result = result);
   }
 
@@ -220,7 +234,11 @@ class _LiveTestScreenState extends State<LiveTestScreen> {
           valueListenable: _test.session,
           builder: (context, session, _) {
             final phase = session?.phase ?? TestPhase.armed;
-            final header = SafitHeader(title: _title(), showSettings: false);
+            final header = SafitHeader(
+              title: _title(),
+              showSettings: false,
+              actions: [if (_test.isSimulation) const _SimulationBadge()],
+            );
             if (_resting) {
               return SafitPage(
                 header: header,
@@ -234,6 +252,7 @@ class _LiveTestScreenState extends State<LiveTestScreen> {
                     bout: _completedBouts.last,
                     boutNumber: _completedBouts.length,
                     rest: DateTime.now().difference(_restStart!),
+                    ergocycle: _ergocycle.value,
                   ),
                 ],
               );
@@ -285,18 +304,24 @@ class _LiveTestScreenState extends State<LiveTestScreen> {
 /// Repos entre deux essais du sous-maximal : bilan rapide de l'essai fini
 /// et consigne de resserrer la courroie.
 class _RestView extends StatelessWidget {
-  const _RestView({required this.bout, required this.boutNumber, required this.rest});
+  const _RestView({
+    required this.bout,
+    required this.boutNumber,
+    required this.rest,
+    required this.ergocycle,
+  });
 
   final TestSession bout;
   final int boutNumber;
   final Duration rest;
+  final ErgocycleParameters ergocycle;
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final summary = summarizeTest(
       bout,
-      ErgocycleParameters.provisionalDefaults,
+      ergocycle,
       id: '',
       date: DateTime.now(),
     );
@@ -693,6 +718,31 @@ class _AbortedView extends StatelessWidget {
             style: textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Signale que les mesures sont simulées (émulateur, caméra 240 i/s indisponible
+/// ou zone de détection pas réglée).
+class _SimulationBadge extends StatelessWidget {
+  const _SimulationBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Caméra 240 i/s indisponible ou zone non réglée : mesures simulées',
+      child: Container(
+        margin: const EdgeInsets.only(right: AppSpacing.sm),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+        decoration: BoxDecoration(
+          border: Border.all(color: AppColors.warning),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
+        child: Text(
+          'Simulation',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(color: AppColors.warning),
+        ),
       ),
     );
   }

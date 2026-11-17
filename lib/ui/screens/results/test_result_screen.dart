@@ -11,6 +11,7 @@ import '../../widgets/safit_card.dart';
 import '../../widgets/safit_header.dart';
 import '../../widgets/safit_page.dart';
 import '../../widgets/section_header.dart';
+import 'export_csv.dart';
 
 /// Bilan d'un test : à la fin d'un test, ou depuis l'historique.
 class TestResultScreen extends StatelessWidget {
@@ -100,6 +101,13 @@ class TestResultScreen extends StatelessWidget {
               warning: true,
             ),
           ],
+          const SizedBox(height: AppSpacing.xl),
+          SafitButton(
+            label: 'Exporter (CSV)',
+            icon: Icons.ios_share,
+            variant: SafitButtonVariant.secondary,
+            onPressed: () => exportResultCsv(context, r),
+          ),
         ],
       ),
     );

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'core/theme/app_theme.dart';
 import 'services/app_services.dart';
-import 'ui/shell/app_shell.dart';
+import 'ui/screens/account/auth_screens.dart';
 
 class SafitApp extends StatelessWidget {
   const SafitApp({super.key, required this.services});
@@ -18,7 +18,7 @@ class SafitApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: AppTheme.dark,
         themeMode: ThemeMode.dark,
-        home: const AppShell(),
+        home: const AuthGate(),
       ),
     );
   }

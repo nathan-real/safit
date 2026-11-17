@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../models/test_protocol.dart';
+import '../../models/test_recording.dart';
 import '../../models/test_result.dart';
 import 'results_service.dart';
 
@@ -30,11 +31,17 @@ class MockResultsService implements ResultsService {
     return null;
   }
 
+  final _recordings = <String, TestRecording>{};
+
   @override
-  Future<void> save(TestResult result) async {
+  Future<void> save(TestResult result, {TestRecording? recording}) async {
     _results.add(result);
+    if (recording != null) _recordings[result.id] = recording;
     _revision.value++;
   }
+
+  @override
+  Future<TestRecording?> getRecording(String id) async => _recordings[id];
 
   static List<TestResult> _sampleData() {
     final now = DateTime.now();
