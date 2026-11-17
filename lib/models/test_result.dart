@@ -18,6 +18,28 @@ class StageResult {
   final double? avgPowerW;
 }
 
+/// Résultats d'un essai du test sous-maximal.
+class BoutResult {
+  const BoutResult({
+    required this.index,
+    required this.duration,
+    this.avgPowerW,
+    this.avgHeartRateBpm,
+    this.avgCadenceRpm,
+    this.frictionForceN,
+    this.decelerationR2,
+  });
+
+  /// Essai, à partir de 0.
+  final int index;
+  final Duration duration;
+  final double? avgPowerW;
+  final int? avgHeartRateBpm;
+  final double? avgCadenceRpm;
+  final double? frictionForceN;
+  final double? decelerationR2;
+}
+
 /// Résultat enregistré d'un test terminé.
 class TestResult {
   const TestResult({
@@ -35,6 +57,8 @@ class TestResult {
     this.decelerationSlope,
     this.decelerationR2,
     this.stages = const [],
+    this.bouts = const [],
+    this.heartRatePowerSlope,
     this.provisionalErgocycle = false,
   });
 
@@ -64,6 +88,14 @@ class TestResult {
 
   /// Détail par palier (test incrémental).
   final List<StageResult> stages;
+
+  /// Détail par essai (test sous-maximal).
+  final List<BoutResult> bouts;
+
+  /// Pente de la droite FC / puissance (bpm par watt) entre les deux essais
+  /// du test sous-maximal : indicateur de l'aptitude aérobie (VO2max).
+  /// Plus elle est faible, moins le cœur s'emballe quand l'effort augmente.
+  final double? heartRatePowerSlope;
 
   /// Vrai si la force et la puissance ont été calculées avec des paramètres
   /// d'ergocycle provisoires.

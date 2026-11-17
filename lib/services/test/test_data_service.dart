@@ -11,7 +11,9 @@ abstract interface class TestDataService {
   ValueListenable<TestSession?> get session;
 
   /// Prépare le test : la mesure démarrera aux premiers traits détectés.
-  Future<void> arm(TestProtocol protocol);
+  /// [bout] : numéro de l'essai (à partir de 0) pour les tests en plusieurs
+  /// essais, comme le sous-maximal (2 essais à tension différente).
+  Future<void> arm(TestProtocol protocol, {int bout = 0});
 
   /// Fin de l'effort : passe en décélération (ou annule si pas démarré).
   Future<void> stop();

@@ -52,6 +52,57 @@ TestResult summarizeTest(
   );
 }
 
+/// Bilan du test sous-maximal : chaque essai est résumé à part (sa propre
+/// force de friction, puisque la courroie a été resserrée), puis la pente
+/// FC / puissance est calculée entre les deux essais.
+TestResult summarizeBouts(
+  List<TestSession> bouts,
+  ErgocycleParameters ergo, {
+  required String id,
+  required DateTime date,
+}) {
+  final summaries = [
+    for (final bout in bouts) summarizeTest(bout, ergo, id: id, date: date),
+  ];
+  final boutResults = [
+    for (var i = 0; i < summaries.length; i++)
+      BoutResult(
+        index: i,
+        duration: summaries[i].duration,
+        avgPowerW: summaries[i].avgPowerW,
+        avgHeartRateBpm: summaries[i].avgHeartRateBpm,
+        avgCadenceRpm: summaries[i].avgCadenceRpm,
+        frictionForceN: summaries[i].frictionForceN,
+        decelerationR2: summaries[i].decelerationR2,
+      ),
+  ];
+
+  double? slope;
+  if (boutResults.length >= 2) {
+    final first = boutResults.first;
+    final last = boutResults.last;
+    final dPower = (last.avgPowerW ?? 0) - (first.avgPowerW ?? 0);
+    if (first.avgHeartRateBpm != null && last.avgHeartRateBpm != null && dPower != 0) {
+      slope = (last.avgHeartRateBpm! - first.avgHeartRateBpm!) / dPower;
+    }
+  }
+
+  final heartRates = [for (final s in summaries) ?s.maxHeartRateBpm];
+  return TestResult(
+    id: id,
+    protocol: bouts.first.protocol,
+    date: date,
+    duration: summaries.fold(Duration.zero, (sum, s) => sum + s.duration),
+    avgPowerW: _mean([for (final b in boutResults) ?b.avgPowerW]),
+    avgHeartRateBpm: _mean([for (final b in boutResults) ?b.avgHeartRateBpm?.toDouble()])?.round(),
+    maxHeartRateBpm: heartRates.isEmpty ? null : heartRates.reduce(max),
+    avgCadenceRpm: _mean([for (final b in boutResults) ?b.avgCadenceRpm]),
+    bouts: boutResults,
+    heartRatePowerSlope: slope,
+    provisionalErgocycle: ergo.provisional,
+  );
+}
+
 StageResult _stage(
   int index,
   double target,

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -50,6 +51,17 @@ class _LiveTestScreenState extends State<LiveTestScreen> {
   /// Résultat du test, calculé et enregistré dès la fin de la mesure.
   TestResult? _result;
 
+  /// Essais terminés (le sous-maximal en compte 2, les autres tests 1).
+  final _completedBouts = <TestSession>[];
+  bool _finishHandled = false;
+
+  /// Repos entre deux essais : début du repos et minuterie d'affichage.
+  DateTime? _restStart;
+  Timer? _restTicker;
+
+  int get _boutCount => widget.protocol == TestProtocol.subMaximal ? 2 : 1;
+  bool get _resting => _restStart != null;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -69,6 +81,7 @@ class _LiveTestScreenState extends State<LiveTestScreen> {
 
   @override
   void dispose() {
+    _restTicker?.cancel();
     _test.session.removeListener(_signalChanges);
     if (_test.session.value?.isActive ?? false) _test.abort();
     _test.reset();
@@ -86,25 +99,79 @@ class _LiveTestScreenState extends State<LiveTestScreen> {
       SystemSound.play(SystemSoundType.alert);
       HapticFeedback.heavyImpact();
     }
-    if (s.phase == TestPhase.finished && _result == null) _saveResult(s);
+    if (s.phase == TestPhase.finished && !_finishHandled) {
+      _finishHandled = true;
+      _onBoutFinished(s);
+    }
     _lastStage = s.stageIndex;
     _lastPhase = s.phase;
   }
 
+  /// Un essai vient de finir : repos avant l'essai suivant, ou bilan du test.
+  void _onBoutFinished(TestSession session) {
+    _completedBouts.add(session);
+    if (_completedBouts.length < _boutCount) {
+      setState(() => _restStart = DateTime.now());
+      _restTicker = Timer.periodic(const Duration(seconds: 1), (_) => setState(() {}));
+    } else {
+      _saveResult();
+    }
+  }
+
+  void _startNextBout() {
+    _restTicker?.cancel();
+    setState(() {
+      _restStart = null;
+      _finishHandled = false;
+    });
+    _lastPhase = null;
+    _lastStage = null;
+    _test.arm(widget.protocol, bout: _completedBouts.length);
+  }
+
   /// Calcule le bilan du test et l'ajoute à l'historique.
-  void _saveResult(TestSession session) {
+  void _saveResult() {
     final now = DateTime.now();
-    final result = summarizeTest(
-      session,
-      ErgocycleParameters.provisionalDefaults,
-      id: now.microsecondsSinceEpoch.toString(),
-      date: now,
-    );
+    final id = now.microsecondsSinceEpoch.toString();
+    const ergo = ErgocycleParameters.provisionalDefaults;
+    final result = _completedBouts.length > 1
+        ? summarizeBouts(_completedBouts, ergo, id: id, date: now)
+        : summarizeTest(_completedBouts.single, ergo, id: id, date: now);
     _results.save(result);
     setState(() => _result = result);
   }
 
+  /// Pendant le repos, quitter fait perdre l'essai déjà fait : on demande.
+  Future<void> _confirmLeaveDuringRest() async {
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Abandonner le test ?'),
+        content: const Text('L\'essai 1 ne sera pas enregistré.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Rester'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Abandonner'),
+          ),
+        ],
+      ),
+    );
+    if (leave == true && mounted) Navigator.of(context).pop();
+  }
+
+  /// Titre de l'écran : l'essai en cours pour le sous-maximal.
+  String _title() {
+    if (_boutCount == 1) return widget.protocol.title;
+    final current = _resting ? _completedBouts.length : _completedBouts.length + 1;
+    return 'Sous-max · essai ${min(current, _boutCount)}/$_boutCount';
+  }
+
   Future<void> _confirmStop() async {
+    if (_resting) return _confirmLeaveDuringRest();
     final s = _test.session.value;
     if (s == null || !s.isActive) {
       if (mounted) Navigator.of(context).pop();
@@ -153,8 +220,26 @@ class _LiveTestScreenState extends State<LiveTestScreen> {
           valueListenable: _test.session,
           builder: (context, session, _) {
             final phase = session?.phase ?? TestPhase.armed;
+            final header = SafitHeader(title: _title(), showSettings: false);
+            if (_resting) {
+              return SafitPage(
+                header: header,
+                bottom: SafitButton(
+                  label: 'Commencer l\'essai ${_completedBouts.length + 1}',
+                  icon: Icons.play_arrow_rounded,
+                  onPressed: _startNextBout,
+                ),
+                children: [
+                  _RestView(
+                    bout: _completedBouts.last,
+                    boutNumber: _completedBouts.length,
+                    rest: DateTime.now().difference(_restStart!),
+                  ),
+                ],
+              );
+            }
             return SafitPage(
-              header: SafitHeader(title: widget.protocol.title, showSettings: false),
+              header: header,
               bottom: switch (phase) {
                 TestPhase.armed => SafitButton(
                     label: 'Annuler',
@@ -193,6 +278,82 @@ class _LiveTestScreenState extends State<LiveTestScreen> {
           },
         ),
       ),
+    );
+  }
+}
+
+/// Repos entre deux essais du sous-maximal : bilan rapide de l'essai fini
+/// et consigne de resserrer la courroie.
+class _RestView extends StatelessWidget {
+  const _RestView({required this.bout, required this.boutNumber, required this.rest});
+
+  final TestSession bout;
+  final int boutNumber;
+  final Duration rest;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final summary = summarizeTest(
+      bout,
+      ErgocycleParameters.provisionalDefaults,
+      id: '',
+      date: DateTime.now(),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: AppSpacing.lg),
+        Text('Essai $boutNumber terminé', style: textTheme.headlineMedium, textAlign: TextAlign.center),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'Repos : ${formatDuration(rest)}',
+          style: textTheme.titleLarge?.copyWith(
+            color: AppColors.accent,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: AppSpacing.xl),
+        Row(
+          children: [
+            Expanded(
+              child: _Metric(
+                icon: Icons.bolt,
+                label: 'Puissance moyenne',
+                value: summary.avgPowerW?.round().toString() ?? '--',
+                unit: 'W',
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: _Metric(
+                icon: Icons.favorite,
+                iconColor: AppColors.heartRate,
+                label: 'FC moyenne',
+                value: summary.avgHeartRateBpm?.toString() ?? '--',
+                unit: 'bpm',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xl),
+        SafitCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Avant l\'essai ${boutNumber + 1}', style: textTheme.titleMedium),
+              const SizedBox(height: AppSpacing.md),
+              Text(
+                '1. Reposez-vous.\n'
+                '2. Resserrez la courroie : l\'effort doit être un peu plus dur qu\'au premier essai.\n'
+                '3. Quand vous êtes prêt, lancez l\'essai ${boutNumber + 1}.',
+                style: textTheme.bodyMedium,
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

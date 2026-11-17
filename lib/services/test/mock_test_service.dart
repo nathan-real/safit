@@ -20,7 +20,15 @@ class MockTestService implements TestDataService {
   static const _stageDuration = Duration(minutes: 1);
 
   /// Pente de ralentissement simulée pendant la décélération (rpm/s).
+  /// Plus forte à chaque essai : la courroie a été resserrée.
   static const _decelerationRpmPerSecond = 12.0;
+  static const _decelerationIncreasePerBout = 6.0;
+
+  /// Le cœur bat plus vite quand l'effort est plus dur (essai suivant).
+  static const _heartRateIncreasePerBout = 18;
+
+  int _bout = 0;
+  double get _deceleration => _decelerationRpmPerSecond + _decelerationIncreasePerBout * _bout;
 
   final _session = ValueNotifier<TestSession?>(null);
   final _random = Random();
@@ -34,8 +42,9 @@ class MockTestService implements TestDataService {
   ValueListenable<TestSession?> get session => _session;
 
   @override
-  Future<void> arm(TestProtocol protocol) async {
+  Future<void> arm(TestProtocol protocol, {int bout = 0}) async {
     _timer?.cancel();
+    _bout = bout;
     _decelerationStart = null;
     _decelerationStartRpm = null;
     final incremental = protocol == TestProtocol.incremental;
@@ -120,7 +129,7 @@ class MockTestService implements TestDataService {
     _decelerationStart ??= elapsed - _tick;
     _decelerationStartRpm ??= s.cadenceRpm ?? 0;
     final t = (elapsed - _decelerationStart!).inMilliseconds / 1000;
-    final speed = _decelerationStartRpm! - _decelerationRpmPerSecond * t;
+    final speed = _decelerationStartRpm! - _deceleration * t;
 
     if (speed <= 0) {
       _timer?.cancel();
@@ -183,7 +192,8 @@ class MockTestService implements TestDataService {
 
   int _heartRate(Duration elapsed) {
     final minutes = elapsed.inMilliseconds / 60000;
-    return (75 + 75 * (1 - exp(-minutes / 2)) + _noise(1)).round();
+    final rise = 75 + _heartRateIncreasePerBout * _bout;
+    return (75 + rise * (1 - exp(-minutes / 2)) + _noise(1)).round();
   }
 
   double _noise(double amplitude) => (_random.nextDouble() * 2 - 1) * amplitude;

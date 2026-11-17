@@ -77,6 +77,42 @@ void main() {
     await close(tester);
   });
 
+  testWidgets('Sous-maximal : essai 1, repos, essai 2, puis pente FC / puissance',
+      (tester) async {
+    Future<void> runBout() async {
+      await tester.pump(const Duration(seconds: 3)); // départ automatique
+      await tester.pump(const Duration(minutes: 5)); // fin de l'essai au signal
+      await tester.pump(const Duration(seconds: 15)); // décélération
+    }
+
+    await openLive(tester, TestProtocol.subMaximal);
+    expect(find.text('Sous-max · essai 1/2'), findsOneWidget);
+    await runBout();
+
+    expect(find.text('Essai 1 terminé'), findsOneWidget);
+    expect(find.textContaining('Resserrez la courroie'), findsOneWidget);
+    await tester.tap(find.text('Commencer l\'essai 2'));
+    await tester.pump();
+    expect(find.text('Sous-max · essai 2/2'), findsOneWidget);
+    expect(find.text('Commencez à pédaler'), findsOneWidget);
+    await runBout();
+
+    final saved = (await services.results.listResults()).first;
+    expect(saved.protocol, TestProtocol.subMaximal);
+    expect(saved.bouts, hasLength(2));
+    // Courroie plus serrée au 2e essai : plus de puissance, et un cœur plus rapide.
+    expect(saved.bouts[1].avgPowerW!, greaterThan(saved.bouts[0].avgPowerW!));
+    expect(saved.heartRatePowerSlope, greaterThan(0));
+
+    await tester.tap(find.text('Voir les résultats'));
+    await tester.pumpAndSettle();
+    expect(find.text('Pente FC / puissance'), findsOneWidget);
+    final page = find.byType(Scrollable).first;
+    await tester.scrollUntilVisible(find.text('Par essai'), 200, scrollable: page);
+    expect(find.text('Par essai'), findsOneWidget);
+    await close(tester);
+  });
+
   testWidgets('Force-vitesse : « Sprintez ! » puis arrêt automatique', (tester) async {
     await openLive(tester, TestProtocol.forceVelocity);
     await tester.pump(const Duration(seconds: 3));

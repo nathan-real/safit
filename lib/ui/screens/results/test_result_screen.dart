@@ -68,26 +68,30 @@ class TestResultScreen extends StatelessWidget {
             const SectionHeader(title: 'Par palier'),
             _StagesTable(r.stages),
           ],
-          if (r.protocol == TestProtocol.subMaximal) ...[
-            const SizedBox(height: AppSpacing.lg),
+          if (r.bouts.isNotEmpty) ...[
+            const SectionHeader(title: 'Par essai'),
+            _BoutsTable(r.bouts),
+            const SizedBox(height: AppSpacing.md),
             const _Notice(
-              'Le 2ᵉ palier et la pente fréquence cardiaque / puissance '
-              '(indicateur de la VO2max) arriveront avec le ticket dédié.',
+              'Pente FC / puissance : de combien le cœur accélère quand la puissance '
+              'augmente d\'un watt. C\'est un indicateur de la VO2max : plus elle est '
+              'faible, meilleure est l\'aptitude aérobie.',
             ),
+          ] else ...[
+            const SectionHeader(title: 'Décélération'),
+            _Grid(tiles: [
+              _Tile(
+                'Décélération',
+                r.decelerationSlope?.toStringAsFixed(1),
+                'tr/min par s',
+              ),
+              _Tile(
+                'Régularité',
+                r.decelerationR2 == null ? null : '${(r.decelerationR2! * 100).toStringAsFixed(0)} %',
+                r.decelerationR2 == null ? '' : (r.decelerationR2! >= 0.95 ? 'linéaire' : 'à refaire'),
+              ),
+            ]),
           ],
-          const SectionHeader(title: 'Décélération'),
-          _Grid(tiles: [
-            _Tile(
-              'Décélération',
-              r.decelerationSlope?.toStringAsFixed(1),
-              'tr/min par s',
-            ),
-            _Tile(
-              'Régularité',
-              r.decelerationR2 == null ? null : '${(r.decelerationR2! * 100).toStringAsFixed(0)} %',
-              r.decelerationR2 == null ? '' : (r.decelerationR2! >= 0.95 ? 'linéaire' : 'à refaire'),
-            ),
-          ]),
           if (r.provisionalErgocycle) ...[
             const SizedBox(height: AppSpacing.lg),
             const _Notice(
@@ -118,6 +122,17 @@ class TestResultScreen extends StatelessWidget {
           _Tile('Force de friction', r.frictionForceN?.toStringAsFixed(1), 'N', highlight: true),
           _Tile('Cadence moyenne', r.avgCadenceRpm?.round().toString(), 'rpm'),
           ...common,
+        ],
+      TestProtocol.subMaximal when r.bouts.isNotEmpty => [
+          _Tile(
+            'Pente FC / puissance',
+            r.heartRatePowerSlope?.toStringAsFixed(2),
+            'bpm par W',
+            highlight: true,
+          ),
+          _Tile('Puissance moyenne', r.avgPowerW?.round().toString(), 'W'),
+          ...common,
+          _Tile('FC max', r.maxHeartRateBpm?.toString(), 'bpm'),
         ],
       TestProtocol.subMaximal || TestProtocol.incremental => [
           _Tile('Puissance moyenne', r.avgPowerW?.round().toString(), 'W', highlight: true),
@@ -183,6 +198,46 @@ class _Grid extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _BoutsTable extends StatelessWidget {
+  const _BoutsTable(this.bouts);
+
+  final List<BoutResult> bouts;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    Widget cell(String text, {bool header = false, TextAlign align = TextAlign.right}) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+          child: Text(
+            text,
+            textAlign: align,
+            style: header ? textTheme.bodySmall : textTheme.bodyMedium,
+          ),
+        );
+
+    return SafitCard(
+      child: Table(
+        columnWidths: const {0: FlexColumnWidth(1.2)},
+        children: [
+          TableRow(children: [
+            cell('Essai', header: true, align: TextAlign.left),
+            cell('Puiss.', header: true),
+            cell('FC', header: true),
+            cell('Friction', header: true),
+          ]),
+          for (final b in bouts)
+            TableRow(children: [
+              cell('${b.index + 1}', align: TextAlign.left),
+              cell(b.avgPowerW == null ? '--' : '${b.avgPowerW!.round()} W'),
+              cell(b.avgHeartRateBpm == null ? '--' : '${b.avgHeartRateBpm} bpm'),
+              cell(b.frictionForceN == null ? '--' : '${b.frictionForceN!.toStringAsFixed(1)} N'),
+            ]),
+        ],
+      ),
     );
   }
 }

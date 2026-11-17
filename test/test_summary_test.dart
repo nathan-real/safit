@@ -33,6 +33,34 @@ void main() {
     });
   });
 
+  test('sous-maximal : chaque essai a sa force, puis la pente FC / puissance', () {
+    TestSession bout(double deceleration, int heartRate) => TestSession(
+          protocol: TestProtocol.subMaximal,
+          phase: TestPhase.finished,
+          decelerationSlope: deceleration,
+          samples: [
+            for (var i = 0; i < 5; i++)
+              TestSample(elapsed: Duration(seconds: i), cadenceRpm: 60, heartRateBpm: heartRate),
+          ],
+        );
+
+    // Essai 1 : -10 tr/min/s → 20 N → 120 W à 60 tr/min, 100 bpm.
+    // Essai 2 : -20 tr/min/s → 40 N → 240 W, 130 bpm.
+    final result = summarizeBouts(
+      [bout(-10, 100), bout(-20, 130)],
+      _ergo,
+      id: 'x',
+      date: DateTime(2026),
+    );
+
+    expect(result.bouts, hasLength(2));
+    expect(result.bouts[0].frictionForceN, closeTo(20, 1e-9));
+    expect(result.bouts[1].avgPowerW, closeTo(240, 1e-9));
+    // (130 - 100) bpm / (240 - 120) W = 0,25 bpm par watt.
+    expect(result.heartRatePowerSlope, closeTo(0.25, 1e-9));
+    expect(result.duration, const Duration(seconds: 8));
+  });
+
   test('bilan d\'un test incrémental : moyennes, force, puissance par palier', () {
     final session = TestSession(
       protocol: TestProtocol.incremental,
